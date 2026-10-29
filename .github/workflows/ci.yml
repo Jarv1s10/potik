@@ -56,11 +56,19 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
       - run: |
-          free -m; nproc
-          for i in 1 2 3; do uv run pytest -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done
-          free -m
-          sudo dmesg -T | grep -iE "killed process|oom|out of memory|segfault|traps:" | tail -20 || true
-          echo "--- last kernel lines"; sudo dmesg -T | tail -15
+          mkdir -p /tmp/dbg && cat > /tmp/dbg/debugsig.py <<'PY'
+          import faulthandler, os, signal, sys
+          SIGS = [signal.SIGTERM, signal.SIGPIPE, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGINT]
+          def pytest_runtest_setup(item):
+              disp = {s.name: str(signal.getsignal(s))[:40] for s in SIGS}
+              print(f"\n[{os.getpid()}] SETUP {item.nodeid} {disp}", file=sys.stderr, flush=True)
+              for s in (signal.SIGTERM, signal.SIGPIPE, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2):
+                  if signal.getsignal(s) in (signal.SIG_DFL, None):
+                      faulthandler.register(s, all_threads=True, chain=False)
+          PY
+          for i in 1 2 3; do PYTHONPATH=/tmp/dbg uv run pytest -p debugsig -n 4 -q 2>/tmp/dbg/err$i.txt | grep -E "crashed while|passed|failed" | tail -3; done
+          for i in 1 2 3; do echo "== run $i"; grep -B3 -A25 -E "^(Current thread|Thread 0x|Fatal)" /tmp/dbg/err$i.txt | head -80; done
+          echo "== dispositions that changed"; cat /tmp/dbg/err*.txt | grep SETUP | grep -oE "\{.*\}" | sort | uniq -c
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
