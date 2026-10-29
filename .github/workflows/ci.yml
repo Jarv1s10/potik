@@ -4,8 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    - cron: "0 3 * * *"  # the slow scenarios, nightly
   workflow_dispatch:
     inputs:
       slow:
@@ -59,7 +57,7 @@ jobs:
       - run: uv run --frozen pytest tests/unit -n 4
 
   slow:
-    if: github.event_name == 'schedule' || inputs.slow
+    if: inputs.slow  # before a release, or by hand
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
