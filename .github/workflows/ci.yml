@@ -55,15 +55,18 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
-      - run: sudo apt-get install -y -qq strace > /dev/null
-      - run: uv sync -q
       - run: |
-          for i in 1 2 3 4; do
-            strace -f -qq -e trace=kill,tkill,tgkill,exit_group,exit -e signal=none -o /tmp/st$i.txt .venv/bin/pytest -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3
-            if ! grep -q "passed in" <(tail -0 /tmp/st$i.txt); then :; fi
-            echo "== kills in run $i"; grep -E "kill\(" /tmp/st$i.txt | grep -v "= -1 ESRCH" | head -30
-            echo "== nonzero exits in run $i"; grep -E "exit_group\([^0]" /tmp/st$i.txt | head -20
-          done
+          mkdir -p /tmp/dbg && cat > /tmp/dbg/nodedown.py <<'PY'
+          import sys
+          def pytest_testnodedown(node, error):
+              if error:
+                  try:
+                      code = node.gateway._io.popen.wait(timeout=10)
+                  except Exception as exc:
+                      code = repr(exc)
+                  print(f"\n#### worker {node.gateway.id} down, exit status {code}, error {str(error)[:200]!r}", file=sys.stderr, flush=True)
+          PY
+          for i in 1 2 3 4 5; do PYTHONPATH=/tmp/dbg uv run pytest -p nodedown -n 4 -q 2>&1 | grep -E "####|crashed while|passed in|failed" | tail -6; done
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
