@@ -57,18 +57,21 @@ jobs:
       - run: docker pull apache/kafka:4.1.0
       - run: |
           mkdir -p /tmp/dbg && cat > /tmp/dbg/debugsig.py <<'PY'
-          import faulthandler, os, signal, sys
-          SIGS = [signal.SIGTERM, signal.SIGPIPE, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGINT]
+          import faulthandler, os, signal
+          FILES = {}
+          SIGS = [signal.SIGTERM, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2]
           def pytest_runtest_setup(item):
-              disp = {s.name: str(signal.getsignal(s))[:40] for s in SIGS}
-              print(f"\n[{os.getpid()}] SETUP {item.nodeid} {disp}", file=sys.stderr, flush=True)
-              for s in (signal.SIGTERM, signal.SIGPIPE, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2):
-                  if signal.getsignal(s) in (signal.SIG_DFL, None):
-                      faulthandler.register(s, all_threads=True, chain=False)
+              pid = os.getpid()
+              log = FILES.setdefault(pid, open(f"/tmp/dbg/w{pid}.txt", "a", buffering=1))
+              log.write(f"SETUP {item.nodeid} " + " ".join(f"{s.name}={signal.getsignal(s)}" for s in [*SIGS, signal.SIGPIPE]) + "\n")
+              for s in SIGS:
+                  if signal.getsignal(s) == signal.SIG_DFL:
+                      log.write(f"  register {s.name}\n")
+                      faulthandler.register(s, file=log, all_threads=True, chain=False)
           PY
-          for i in 1 2 3; do PYTHONPATH=/tmp/dbg uv run pytest -p debugsig -n 4 -q 2>/tmp/dbg/err$i.txt | grep -E "crashed while|passed|failed" | tail -3; done
-          for i in 1 2 3; do echo "== run $i"; grep -B3 -A25 -E "^(Current thread|Thread 0x|Fatal)" /tmp/dbg/err$i.txt | head -80; done
-          echo "== dispositions that changed"; cat /tmp/dbg/err*.txt | grep SETUP | grep -oE "\{.*\}" | sort | uniq -c
+          for i in 1 2 3; do PYTHONPATH=/tmp/dbg uv run pytest -p debugsig -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done
+          echo "== signal dumps"; grep -l "most recent call first" /tmp/dbg/w*.txt | while read f; do echo "### $f"; grep -B8 -A40 "most recent call first" "$f" | head -120; done
+          echo "== registrations"; cat /tmp/dbg/w*.txt | grep register | sort | uniq -c
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
