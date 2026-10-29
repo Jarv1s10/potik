@@ -1,8 +1,8 @@
 name: Docs
 
+# The release workflow deploys the docs of each release, so the site matches PyPI. Run it by hand to publish a docs fix from main.
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:

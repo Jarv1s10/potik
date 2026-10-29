@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      slow:
+        description: Run the slow scenarios too
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      slow:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uvx prek run --all-files --show-diff-on-failure
+      - run: uv run --no-dev --group docs zensical build --strict
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: docker pull apache/kafka:4.1.0  # once, not in every worker at once
+      - run: uv run pytest -n 4
+
+  # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
+  lowest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv lock --resolution lowest-direct
+      - run: uv sync --frozen --all-extras
+      - run: uv run --frozen pytest tests/unit -n 4
+
+  slow:
+    if: inputs.slow  # before a release, or by hand
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: docker pull apache/kafka:4.1.0
+      - run: uv run pytest -m slow -n 4
