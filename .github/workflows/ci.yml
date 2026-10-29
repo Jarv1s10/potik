@@ -48,18 +48,6 @@ jobs:
       - run: docker pull apache/kafka:4.1.0  # once, not in every worker at once
       - run: uv run pytest -n 4
 
-  debug-crash:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - run: docker pull apache/kafka:4.1.0
-      - run: |
-          sudo sysctl -w kernel.core_pattern=/tmp/core.%p > /dev/null
-          ulimit -c unlimited
-          for i in 1 2 3 4 5 6; do uv run pytest -n 4 -q 2>&1 | grep -E "crashed while|passed in|failed" | tail -3; done
-          ls /tmp/core.* 2>/dev/null || echo "no core dumps"
-
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
     runs-on: ubuntu-latest
