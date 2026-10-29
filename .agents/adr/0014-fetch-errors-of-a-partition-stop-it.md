@@ -1,0 +1,5 @@
+# A partition's fetch errors stop it
+
+librdkafka retries transient errors itself, so an error that reaches a fetched record needs an operator: a position out of range or truncated, an unreadable record, or a topic the credentials may not read. Failing the run on it would not help, because the restarted run assigns the same position and meets the same error. One bad partition would crash loop the app and stop every healthy partition, the outcome that ADR 0013 avoids for handler failures. So an error of an assigned partition stops it like a handler failure: nothing commits past it, its earlier records are still handled, and it retries after a reassignment or restart. Operators see it as they see handler failures (ADR 0013). An error of no partition, e.g. a fatal one, still fails the run, and so does every error with `stop_failed_partitions=False`.
+
+We rejected applying the offset policy to a position out of range, because `resume_or_earliest` would then skip deleted records silently. An explicit policy for out-of-range positions can come later as a feature.

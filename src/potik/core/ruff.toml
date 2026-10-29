@@ -1,0 +1,22 @@
+# The core runtime imports nothing above itself: neither the built-in middleware nor the typed layer (see ADR 0006).
+extend = "../../../pyproject.toml"
+
+[lint.flake8-tidy-imports.banned-api]
+"potik.middleware".msg = "the core cannot import the built-in middleware"
+"potik.TopicCheckError".msg = "the core cannot import the built-in middleware"
+"potik.build".msg = "the core cannot import the typed layer"
+"potik.router".msg = "the core cannot import the typed layer"
+"potik.handler".msg = "the core cannot import the typed layer"
+"potik.topic".msg = "the core cannot import the typed layer"
+"potik.serde".msg = "the core cannot import the typed layer"
+"potik.build_runtime".msg = "the core cannot import the typed layer"
+"potik.Router".msg = "the core cannot import the typed layer"
+"potik.RegistrationError".msg = "the core cannot import the typed layer"
+"potik.Topic".msg = "the core cannot import the typed layer"
+"potik.OutputTopic".msg = "the core cannot import the typed layer"
+"potik.HandlerResult".msg = "the core cannot import the typed layer"
+"potik.Key".msg = "the core cannot import the typed layer"
+"potik.Header".msg = "the core cannot import the typed layer"
+"potik.Context".msg = "the core cannot import the typed layer"
+"potik.DecodeError".msg = "the core cannot import the typed layer"
+"potik.EncodeError".msg = "the core cannot import the typed layer"

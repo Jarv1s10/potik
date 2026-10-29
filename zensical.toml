@@ -1,0 +1,82 @@
+[project]
+site_name = "potik"
+site_description = "Exactly-once Kafka services in async Python"
+site_url = "https://jarv1s10.github.io/potik/"
+repo_url = "https://github.com/Jarv1s10/potik"
+repo_name = "Jarv1s10/potik"
+edit_uri = "edit/main/docs/"
+nav = [
+  { "Home" = "index.md" },
+  { "Quickstart" = "quickstart.md" },
+  { "Runtime" = [
+    { "How the runtime works" = "runtime/index.md" },
+    { "Configuration" = "runtime/configuration.md" },
+    { "Production" = "runtime/production.md" },
+    { "Core API" = "runtime/core.md" },
+  ] },
+  { "Middleware" = [
+    { "Overview" = "middleware/index.md" },
+    { "Exception rules" = "middleware/exceptions.md" },
+    { "Concurrency limits" = "middleware/concurrency.md" },
+    { "Topic check" = "middleware/topic-check.md" },
+    { "Tracing" = "middleware/tracing.md" },
+    { "Metrics" = "middleware/metrics.md" },
+  ] },
+  { "Typed API" = [
+    { "Overview" = "typed/index.md" },
+    { "Topics and serdes" = "typed/topics.md" },
+    { "Handlers" = "typed/handlers.md" },
+    { "Testing" = "typed/testing.md" },
+  ] },
+  { "Clients" = [
+    { "Producer" = "producer.md" },
+    { "Request-reply" = "request-reply.md" },
+  ] },
+  { "API reference" = "reference.md" },
+]
+
+[project.theme]
+features = [
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.sections",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.highlight = {}
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.superfences = {}
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+show_root_heading = true
+show_source = false
+docstring_style = "google"
+show_signature_annotations = true
+separate_signature = true
+members_order = "source"
+merge_init_into_class = true
+show_if_no_docstring = false
+filters = ["!^_"]

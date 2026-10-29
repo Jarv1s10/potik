@@ -1,0 +1,3 @@
+# Stopped partitions do not fail the probes
+
+A handler failure stops its partition: the runtime pauses it at the failed record and commits nothing past it until the partition is reassigned or the process restarts. Liveness ignores stopped partitions, because a restart retries the same record, which usually fails again, and turns one stuck partition into a crash loop that stops every partition. Readiness ignores them too, because no traffic routes to a Kafka consumer by readiness. Operators see stopped partitions through `PartitionStatus.failure`, the error log, and the `potik.partition.stopped` metric of `MetricsMiddleware`, and should alert on it. The semantic conventions define no metric for it, so it is the one exception to ADR 0007.

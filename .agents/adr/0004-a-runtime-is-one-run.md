@@ -1,0 +1,5 @@
+# A Runtime is one run, and takes middleware instances
+
+Partly superseded by ADR 0011.
+
+A `Runtime` runs once and takes middleware instances, while an App and a Producer take `Middleware` specs and build new instances each time they run or open. The App already made a new Runtime for each run, so the Runtime's specs only moved instance building out of the App's reach. With instances, the App builds its middleware itself and reads what they declare, e.g. dead letter topics, before the run starts, so the core needs no notion of declared topics. One run per Runtime also merges the per-run session into the Runtime, and makes its `status()` mean that run from its start, never a previous one. A core service that runs again makes a new Runtime, as a restarted process does. The Producer keeps specs, because one producer, e.g. a module-level one that a web framework's lifespan opens, may be entered more than once. We rejected keeping specs in the Runtime and listing each run's middleware or declared topics in its lifespan scope, which would have the core carry the typed layer's declarations, or have middleware inspect each other.

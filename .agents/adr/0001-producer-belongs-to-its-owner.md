@@ -1,0 +1,3 @@
+# A Producer belongs to whoever creates it
+
+A Producer is a standalone client that its owner creates and closes, e.g. an API service, or an App's lifespan, which shares it with handlers through the lifespan's context. We rejected making `Context` a `Context[T]` object that carries a framework-owned producer. Services without an App need the producer too, so `Context` could only carry it. The lifespan already owns per-run resources, and a second owner would have to order the producer's flush against the lifespan's exit. Type checkers cannot connect a router's `Context[T]` to its App's lifespan, so the generic would check nothing.

@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+**/.venv
+
+# Environment variables
+**/.env
+**/.env.*
+!**/.env.example
+
+# local
+.local/
+
+# benchmark outputs
+benchmarks/results/
+benchmarks/comparison/results/
+
+# docs build output
+site/

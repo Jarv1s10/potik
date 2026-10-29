@@ -1,0 +1,24 @@
+default_language_version.python = "3.12"
+
+[[repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.17.2"
+hooks = [
+  { id = "ruff-check", args = ["--fix", "--unsafe-fixes"], types_or = ["python", "pyi"] },
+  { id = "ruff-format", types_or = ["python", "pyi"] },
+]
+
+[[repos]]
+repo = "https://github.com/astral-sh/ty-pre-commit"
+rev = "v0.0.82"
+hooks = [
+  { id = "ty", always_run = false },
+]
+
+# mypy and pyrefly check the whole project, from its environment.
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "mypy", name = "mypy", language = "system", entry = "uv run mypy", pass_filenames = false, types_or = ["python", "pyi"] },
+  { id = "pyrefly", name = "pyrefly", language = "system", entry = "uv run pyrefly check", pass_filenames = false, types_or = ["python", "pyi"] },
+]

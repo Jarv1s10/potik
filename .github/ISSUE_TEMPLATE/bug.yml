@@ -1,0 +1,27 @@
+name: Bug report
+description: potik does something its docs say it shouldn't.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, what happened instead, and any logs or tracebacks.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest app and steps that show it. Leave out credentials.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: potik, confluent-kafka, Python, and Kafka.
+      placeholder: potik 0.1.0, confluent-kafka 2.16.0, Python 3.12, Kafka 4.1
+    validations:
+      required: true
