@@ -50,3 +50,15 @@ uv run --group docs zensical serve
 ```
 
 The API reference comes from docstrings in `src/`.
+
+The release workflow publishes the docs of each release. To publish a docs fix between releases, run the Docs workflow from `main` by hand.
+
+## Releasing
+
+Pull requests add their user-facing changes to the `unreleased` section at the top of `CHANGELOG.md`. To release:
+
+1. Set the version with `uv version X.Y.Z`, and replace `unreleased` in the changelog with today's date, e.g. `## X.Y.Z (2026-11-30)`.
+2. Commit both to `main`, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. Approve the `pypi` deployment in the Actions tab.
+
+The release workflow checks the tag against the version and the dated changelog heading, and runs the full suite, slow scenarios included. Then it publishes to PyPI through trusted publishing, creates the GitHub release from the changelog section, and deploys the docs.
