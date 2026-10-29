@@ -55,23 +55,15 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
+      - run: sudo apt-get install -y -qq strace > /dev/null
+      - run: uv sync -q
       - run: |
-          mkdir -p /tmp/dbg && cat > /tmp/dbg/debugsig.py <<'PY'
-          import faulthandler, os, signal
-          FILES = {}
-          SIGS = [signal.SIGTERM, signal.SIGALRM, signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2]
-          def pytest_runtest_setup(item):
-              pid = os.getpid()
-              log = FILES.setdefault(pid, open(f"/tmp/dbg/w{pid}.txt", "a", buffering=1))
-              log.write(f"SETUP {item.nodeid} " + " ".join(f"{s.name}={signal.getsignal(s)}" for s in [*SIGS, signal.SIGPIPE]) + "\n")
-              for s in SIGS:
-                  if signal.getsignal(s) == signal.SIG_DFL:
-                      log.write(f"  register {s.name}\n")
-                      faulthandler.register(s, file=log, all_threads=True, chain=False)
-          PY
-          for i in 1 2 3; do PYTHONPATH=/tmp/dbg uv run pytest -p debugsig -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done
-          echo "== signal dumps"; grep -l "most recent call first" /tmp/dbg/w*.txt | while read f; do echo "### $f"; grep -B8 -A40 "most recent call first" "$f" | head -120; done
-          echo "== registrations"; cat /tmp/dbg/w*.txt | grep register | sort | uniq -c
+          for i in 1 2 3 4; do
+            strace -f -qq -e trace=kill,tkill,tgkill,exit_group,exit -e signal=none -o /tmp/st$i.txt .venv/bin/pytest -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3
+            if ! grep -q "passed in" <(tail -0 /tmp/st$i.txt); then :; fi
+            echo "== kills in run $i"; grep -E "kill\(" /tmp/st$i.txt | grep -v "= -1 ESRCH" | head -30
+            echo "== nonzero exits in run $i"; grep -E "exit_group\([^0]" /tmp/st$i.txt | head -20
+          done
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
