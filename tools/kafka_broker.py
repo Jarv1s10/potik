@@ -11,7 +11,7 @@ import subprocess
 import time
 from typing import Self
 
-from confluent_kafka import ConsumerGroupTopicPartitions, KafkaException, Producer
+from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient
 from testcontainers.core.config import testcontainers_config
 from testcontainers.core.container import DockerContainer
@@ -108,20 +108,15 @@ class Broker:
         """Create and load the group and transaction coordinators, as a long-running cluster has them.
 
         Otherwise the first group and the first transaction wait for them, or fail with NOT_COORDINATOR.
+
+        A consumer's `committed()` waits for the group coordinator to load. An `AdminClient`'s `list_consumer_group_offsets()` can segfault librdkafka 2.16 while it loads, in `rd_kafka_cgrp_op()`, because an admin client has no consumer group.
         """
         Producer({"bootstrap.servers": self.bootstrap, "transactional.id": "warm-up"}).init_transactions(timeout)
-        admin = AdminClient({"bootstrap.servers": self.bootstrap})
-        request = [ConsumerGroupTopicPartitions("warm-up")]
-        deadline = time.monotonic() + timeout
-        while True:
-            (future,) = admin.list_consumer_group_offsets(request, request_timeout=5).values()
-            try:
-                future.result()
-                return
-            except KafkaException:
-                if time.monotonic() > deadline:
-                    raise
-                time.sleep(0.1)
+        consumer = Consumer({"bootstrap.servers": self.bootstrap, "group.id": "warm-up"})
+        try:
+            consumer.committed([TopicPartition("warm-up", 0)], timeout=timeout)
+        finally:
+            consumer.close()
 
     def pause(self) -> None:
         self.container.get_wrapped_container().pause()

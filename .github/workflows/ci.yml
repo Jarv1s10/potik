@@ -42,7 +42,6 @@ jobs:
         python: ["3.12", "3.13", "3.14"]
     env:
       UV_PYTHON: ${{ matrix.python }}
-      PYTHONFAULTHANDLER: "1"  # a crashed worker prints its traceback
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -55,19 +54,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
-      - run: sudo apt-get install -y -qq gdb > /dev/null
-      - run: uv sync -q
       - run: |
           sudo sysctl -w kernel.core_pattern=/tmp/core.%p > /dev/null
           ulimit -c unlimited
-          for i in 1 2 3 4 5 6; do
-            .venv/bin/pytest -n 4 -q 2>&1 | grep -E "crashed while|passed in" | tail -3
-            if ls /tmp/core.* > /dev/null 2>&1; then break; fi
-          done
-          for core in /tmp/core.*; do
-            echo "##### $core"
-            gdb -q -batch -ex "info threads" -ex "thread apply all bt 25" "$(readlink -f .venv/bin/python)" "$core" 2>&1 | grep -v "^\[New LWP\|^warning:" | head -400
-          done
+          for i in 1 2 3 4 5 6; do uv run pytest -n 4 -q 2>&1 | grep -E "crashed while|passed in|failed" | tail -3; done
+          ls /tmp/core.* 2>/dev/null || echo "no core dumps"
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
