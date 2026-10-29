@@ -42,9 +42,11 @@ jobs:
         python: ["3.12", "3.13", "3.14"]
     env:
       UV_PYTHON: ${{ matrix.python }}
+      PYTHONFAULTHANDLER: "1"  # a crashed worker prints its traceback
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
+      - run: docker pull apache/kafka:4.1.0  # once, not in every worker at once
       - run: uv run pytest -n 4
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
@@ -63,4 +65,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
+      - run: docker pull apache/kafka:4.1.0
       - run: uv run pytest -m slow -n 4

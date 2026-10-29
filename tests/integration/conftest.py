@@ -7,12 +7,13 @@ The `workload` fixture gives each test uniquely named topics and groups, and del
 
 import itertools
 import os
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from confluent_kafka import KafkaException, Producer
+from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
 from harness import FAST_BROKER, SMALL_BROKER, Process, Workload, app_command
 from kafka_broker import Broker
@@ -70,6 +71,27 @@ def broker() -> Iterator[Broker]:
         yield broker
 
 
+def _wait_until_served(bootstrap: str, topics: list[str], partitions: int) -> None:
+    """Wait until every partition of new `topics` answers offset requests.
+
+    Creating a topic returns before its leader serves it, so a fresh topic can briefly look missing or answer `NOT_LEADER_FOR_PARTITION`.
+    """
+    consumer = Consumer({"bootstrap.servers": bootstrap, "group.id": "unused"})  # It never joins the group.
+    deadline = time.monotonic() + 30
+    try:
+        for partition in (TopicPartition(topic, p) for topic in topics for p in range(partitions)):
+            while True:
+                try:
+                    consumer.get_watermark_offsets(partition, timeout=10)
+                    break
+                except KafkaException:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.05)
+    finally:
+        consumer.close()
+
+
 @pytest.fixture
 def workload(bootstrap: str, request: pytest.FixtureRequest) -> Iterator:
     """Return `workload(partitions, records, payload=b"v")`, which creates and fills isolated topics."""
@@ -82,6 +104,7 @@ def workload(bootstrap: str, request: pytest.FixtureRequest) -> Iterator:
         source, target = f"{prefix}-in", f"{prefix}-out"
         for future in admin.create_topics([NewTopic(source, partitions, 1), NewTopic(target, partitions, 1)]).values():
             future.result()
+        _wait_until_served(bootstrap, [source, target], partitions)
         producer = Producer({"bootstrap.servers": bootstrap, "linger.ms": 20})
         for i in range(records):
             while True:
