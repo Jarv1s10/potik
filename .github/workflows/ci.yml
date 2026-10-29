@@ -55,18 +55,19 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
+      - run: sudo apt-get install -y -qq gdb > /dev/null
+      - run: uv sync -q
       - run: |
-          mkdir -p /tmp/dbg && cat > /tmp/dbg/nodedown.py <<'PY'
-          import sys
-          def pytest_testnodedown(node, error):
-              if error:
-                  try:
-                      code = node.gateway._io.popen.wait(timeout=10)
-                  except Exception as exc:
-                      code = repr(exc)
-                  print(f"\n#### worker {node.gateway.id} down, exit status {code}, error {str(error)[:200]!r}", file=sys.stderr, flush=True)
-          PY
-          for i in 1 2 3 4 5; do PYTHONPATH=/tmp/dbg uv run pytest -p nodedown -n 4 -q 2>&1 | grep -E "####|crashed while|passed in|failed" | tail -6; done
+          sudo sysctl -w kernel.core_pattern=/tmp/core.%p > /dev/null
+          ulimit -c unlimited
+          for i in 1 2 3 4 5 6; do
+            .venv/bin/pytest -n 4 -q 2>&1 | grep -E "crashed while|passed in" | tail -3
+            if ls /tmp/core.* > /dev/null 2>&1; then break; fi
+          done
+          for core in /tmp/core.*; do
+            echo "##### $core"
+            gdb -q -batch -ex "info threads" -ex "thread apply all bt 25" "$(readlink -f .venv/bin/python)" "$core" 2>&1 | grep -v "^\[New LWP\|^warning:" | head -400
+          done
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
