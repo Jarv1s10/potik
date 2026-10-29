@@ -109,12 +109,20 @@ class Broker:
 
         Otherwise the first group and the first transaction wait for them, or fail with NOT_COORDINATOR.
 
-        A consumer's `committed()` waits for the group coordinator to load. An `AdminClient`'s `list_consumer_group_offsets()` can segfault librdkafka 2.16 while it loads, in `rd_kafka_cgrp_op()`, because an admin client has no consumer group.
+        It asks a consumer for committed offsets until the group coordinator answers. An `AdminClient`'s `list_consumer_group_offsets()` can segfault librdkafka 2.16 while the coordinator loads, in `rd_kafka_cgrp_op()`, because an admin client has no consumer group.
         """
         Producer({"bootstrap.servers": self.bootstrap, "transactional.id": "warm-up"}).init_transactions(timeout)
         consumer = Consumer({"bootstrap.servers": self.bootstrap, "group.id": "warm-up"})
+        deadline = time.monotonic() + timeout
         try:
-            consumer.committed([TopicPartition("warm-up", 0)], timeout=timeout)
+            while True:
+                try:
+                    consumer.committed([TopicPartition("warm-up", 0)], timeout=5)
+                    return
+                except KafkaException:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.1)
         finally:
             consumer.close()
 
