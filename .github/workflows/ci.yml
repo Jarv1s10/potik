@@ -49,6 +49,15 @@ jobs:
       - run: docker pull apache/kafka:4.1.0  # once, not in every worker at once
       - run: uv run pytest -n 4
 
+  debug-crash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: docker pull apache/kafka:4.1.0
+      - run: uv run pytest -p no:xdist -v -s tests/integration/test_topics.py tests/integration/test_producer.py tests/integration/test_middleware.py tests/integration/test_runtime.py; echo "pytest exit code $?"
+      - run: for i in 1 2 3; do uv run pytest -n 4 -q tests/integration 2>&1 | tail -3; done; dmesg 2>/dev/null | tail -20 || sudo dmesg | tail -20
+
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
     runs-on: ubuntu-latest
