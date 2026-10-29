@@ -61,4 +61,4 @@ Pull requests add their user-facing changes to the `unreleased` section at the t
 2. Commit both to `main`, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. Approve the `pypi` deployment in the Actions tab.
 
-The release workflow checks the tag against the version and the dated changelog heading, and runs the full suite, slow scenarios included. Then it publishes to PyPI through trusted publishing, creates the GitHub release from the changelog section, and deploys the docs.
+The release workflow checks the tag against the version, runs the full suite, slow scenarios included, and smoke-tests the built wheel. Then it publishes to PyPI with attestations through trusted publishing, creates the GitHub release, and deploys the docs.
