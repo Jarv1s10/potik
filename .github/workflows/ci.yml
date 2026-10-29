@@ -55,7 +55,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: docker pull apache/kafka:4.1.0
-      - run: for i in 1 2 3; do uv run pytest -n 4 -q --deselect tests/unit/test_mock_cluster.py::test_a_run_that_cannot_handle_signals_can_run_without_them 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done; echo WITH; for i in 1 2 3; do uv run pytest -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done
+      - run: |
+          free -m; nproc
+          for i in 1 2 3; do uv run pytest -n 4 -q 2>&1 | grep -E "crashed while|passed|failed" | tail -3; done
+          free -m
+          sudo dmesg -T | grep -iE "killed process|oom|out of memory|segfault|traps:" | tail -20 || true
+          echo "--- last kernel lines"; sudo dmesg -T | tail -15
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
