@@ -7,9 +7,9 @@ from functools import partial
 import anyio
 import anyio.lowlevel
 import pytest
-from confluent_kafka import ConsumerGroupTopicPartitions, KafkaError, KafkaException, TopicPartition
+from confluent_kafka import ConsumerGroupTopicPartitions, KafkaError, KafkaException, Producer, TopicPartition
 
-from potik.core import ConsumerRecord, PermanentError, ProducerRecord, Runtime
+from potik.core import ConsumerRecord, PermanentError, ProducerRecord, Runtime, committer
 from potik.core.committer import Committer
 from potik.middleware import ExceptionMiddleware, on, skip
 
@@ -39,6 +39,32 @@ async def test_failed_shutdown_fails_the_run(workload, monkeypatch) -> None:
     runtime = work.runtime(handler, shutdown_grace_ms=5_000)
     with pytest.raises(RuntimeError, match="commit failed during shutdown"):
         await runtime.run()
+
+
+async def test_a_transaction_that_needs_an_abort_is_repeated(workload, monkeypatch) -> None:
+    """An abortable error, e.g. the sequence gap that a repeat after a stale epoch can leave, aborts and repeats the transaction."""
+    work = workload(2, 100)
+
+    class FailingOnce:
+        def __init__(self, config: dict) -> None:
+            self.producer = Producer(config)
+            self.failed = False
+
+        def __getattr__(self, name: str):
+            return getattr(self.producer, name)
+
+        def commit_transaction(self, *args) -> None:
+            if not self.failed:
+                self.failed = True
+                error = KafkaError(
+                    KafkaError.OUT_OF_ORDER_SEQUENCE_NUMBER, "skipped sequence numbers", txn_requires_abort=True
+                )
+                raise KafkaException(error)
+            self.producer.commit_transaction(*args)
+
+    monkeypatch.setattr(committer, "Producer", FailingOnce)
+    await work.run_until_committed(work.runtime())
+    work.assert_exactly_once()
 
 
 async def test_handler_ignoring_cancellation_fails_the_shutdown(workload) -> None:
