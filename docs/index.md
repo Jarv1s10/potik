@@ -22,7 +22,7 @@ potik has three layers. Each layer uses only the layers below it, and the docs f
 | --- | --- | --- |
 | [Runtime](runtime/index.md) | `potik.core` | Reads the assigned partitions, calls a handler for each record, and commits the outputs with the record's offset. It also handles rebalances, shutdown, and health checks. |
 | [Middleware](middleware/index.md) | `potik.middleware` | Wraps handler calls, transactions, and sends. The built-in middleware retries failed handlers, writes dead letters, limits concurrency, checks topics, and reports traces and metrics. |
-| [Typed API](typed/index.md) | `potik` | Declares topics with typed values and keys, passes each handler the decoded parts of its record, and builds a runtime from the handlers. |
+| [Typed API](typed/index.md) | `potik` | Declares topics with typed values and keys, passes each handler the decoded parts of its record and its dependencies, and builds a runtime from the handlers. |
 
 Most services use the typed API. It builds a core `Runtime`, so the runtime's rules for delivery, failures, and shutdown apply to every service.
 
@@ -40,7 +40,6 @@ potik doesn't have these features yet. Some have a workaround.
 - Batch handlers. A handler takes one record.
 - Schema registry serdes, such as Avro and Protobuf. Write an [`AsyncSerde`](typed/topics.md#serdes-that-need-io).
 - Subscriptions by topic pattern.
-- Dependency injection in the style of FastAPI's `Depends`. Pass services as the run's [context](typed/index.md#context).
 - At-least-once delivery without transactions.
 
 ## Not planned

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, overload
 
 from potik.core.errors import PotikError
-from potik.handler import HandlerResult, _BindHandler, _compile_handler
+from potik.handler import HandlerResult, _BindHandler, _callable_name, _compile_handler
 from potik.middleware.concurrency import _validate_limit
 from potik.middleware.topics import _topic_names
 from potik.topic import OutputTopic, Topic
@@ -94,6 +94,7 @@ class Router:
         - `Annotated[T, Key()]` takes the key, as the topic's key type, or as `bytes` for the raw key.
         - `Annotated[T, Header(name)]` takes a header's last value.
         - `Annotated[T, Context()]` takes the run's context.
+        - `Annotated[T, Depends(dependency)]` takes what a dependency returns or yields (see `Depends`).
         - A parameter annotated `ConsumerRecord` takes the record itself.
         - The one parameter left, if any, takes the value, as the topic's value type, or as `bytes` for the raw value.
 
@@ -106,7 +107,7 @@ class Router:
             output_topics: The topics that the handler returns records to, as `Topic`s or names of `bytes` topics. `potik.build_runtime()` checks that they exist before the run starts. Type checkers then require the handler to return records of their value types, e.g. `ProducerRecord[Accepted]`. The handler may still return records to other topics, which the check does not cover.
 
         Raises:
-            RegistrationError: If the router already handles `topic`, a limit is not a positive integer or None, the handler is not an async function, or a parameter does not fit the topic, e.g. its type differs from the topic's value type.
+            RegistrationError: If the router already handles `topic`, a limit is not a positive integer or None, the handler is not an async function, a parameter of the handler or of a dependency does not fit the topic, e.g. its type differs from the topic's value type, or a dependency depends on itself or is decorated as a context manager.
 
         Example:
             ```python
@@ -139,7 +140,3 @@ class Router:
             return handler
 
         return register
-
-
-def _callable_name(handler: object) -> str:
-    return getattr(handler, "__qualname__", None) or getattr(handler, "__name__", None) or repr(handler)

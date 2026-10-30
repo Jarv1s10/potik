@@ -3,12 +3,13 @@
 Each call that type checkers must reject has one ignore comment per checker, with that checker's error code: `type: ignore` for mypy, `ty: ignore`, and `pyrefly: ignore`. Each checker fails on an unused ignore comment of its own, so a call that stops being rejected fails the check.
 """
 
-from typing import assert_type
+from collections.abc import AsyncIterator
+from typing import Annotated, assert_type
 
 from pydantic import BaseModel
 
 import potik
-from potik import Config, Delivery, Producer, ProducerRecord, Router, Runtime, Topic
+from potik import Config, Delivery, Depends, Producer, ProducerRecord, Router, Runtime, Topic
 from potik.middleware import ExceptionContext, TopicCheckMiddleware, dead_letter, on, skip
 from potik.serde import PydanticJson
 
@@ -108,6 +109,24 @@ async def declared_returns() -> None:
     """A handler with outputs keeps its parameters, and its return type as the outputs' records."""
     await declared(Order(sku="A"))
     await declared("A")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pyrefly: ignore[bad-argument-type]
+
+
+async def connect() -> AsyncIterator[str]:
+    yield "connection"
+
+
+@router.handler("with_dependency")
+async def with_dependency(value: bytes, connection: Annotated[str, Depends(connect)]) -> None: ...
+
+
+async def dependency_calls() -> None:
+    """A parameter that takes a dependency keeps its type, so tests pass its value directly."""
+    await with_dependency(b"", "connection")
+    await with_dependency(b"", 1)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pyrefly: ignore[bad-argument-type]
+
+
+Depends(str)
+Depends("connect")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pyrefly: ignore[bad-argument-type]
 
 
 def rule(context: ExceptionContext[Exception]) -> ProducerRecord:

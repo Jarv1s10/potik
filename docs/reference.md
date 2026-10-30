@@ -24,7 +24,7 @@
 
 ::: potik
     options:
-      members: [build_runtime, Router, RegistrationError, Topic, OutputTopic, HandlerResult, Key, Header, Context, DecodeError, EncodeError]
+      members: [build_runtime, Router, RegistrationError, Topic, OutputTopic, HandlerResult, Key, Header, Context, Depends, DecodeError, EncodeError]
 
 ::: potik.serde
     options:

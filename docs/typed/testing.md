@@ -4,7 +4,7 @@ potik supports two kinds of tests. A unit test calls a handler directly. An app 
 
 ## Calling a handler
 
-`@router.handler()` returns the handler unchanged, so a test can call it with plain objects in place of the record's parts and the run's context. It then checks the records that the handler returns. This test calls the quickstart's `accept`:
+`@router.handler()` returns the handler unchanged, so a test can call it with plain objects in place of the record's parts, the run's context, and the results of its dependencies. It then checks the records that the handler returns. This test calls the quickstart's `accept`:
 
 ```python
 @pytest.mark.anyio
