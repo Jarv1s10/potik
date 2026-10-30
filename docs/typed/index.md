@@ -79,7 +79,7 @@ async def main() -> None:
 anyio.run(main)
 ```
 
-potik doesn't check the context against the parameter's type. `potik.build_runtime()` raises `RegistrationError` if a handler takes `Context()` and you pass no context.
+potik doesn't check the context against the parameter's type. `potik.build_runtime()` raises `RegistrationError` if a handler or a [dependency](handlers.md#dependencies) takes `Context()` and you pass no context.
 
 Pass middleware its resources as arguments, not through the context. [Production](../runtime/production.md#resources) covers how resources close when the run stops.
 
@@ -91,4 +91,5 @@ A core [`Runtime`](../runtime/core.md) takes one function that receives raw reco
 - typed handler parameters, decoded by each `Topic`'s serdes;
 - type-checked outputs, encoded by the output topic's serdes;
 - a context that handlers take as `Context()`;
+- dependencies that handlers take as `Depends()`, resolved for each call;
 - exception rules, concurrency limits, and a topic check that covers every declared output topic.

@@ -7,11 +7,11 @@ from potik.core.config import Config
 from potik.core.middleware import BaseMiddleware, _chain, _middleware_tuple
 from potik.core.runtime import Runtime
 from potik.core.types import ConsumerRecord, ProducerRecord, RecordHandler
-from potik.handler import _NO_CONTEXT
+from potik.handler import _NO_CONTEXT, _callable_name
 from potik.middleware.concurrency import ConcurrencyMiddleware, _validate_limit
 from potik.middleware.exception import ExceptionMiddleware, Rule
 from potik.middleware.topics import TopicCheckMiddleware, _declared_topics
-from potik.router import RegistrationError, Router, _callable_name, _Registration
+from potik.router import RegistrationError, Router, _Registration
 
 __all__ = [
     "build_runtime",
@@ -37,7 +37,7 @@ def build_runtime(
     Args:
         config: The runtime limits and client options.
         routers: The routers whose handlers to run. The runtime copies their handlers, so later registrations have no effect.
-        context: What `Context()` parameters take, e.g. a dataclass of the service's clients.
+        context: What `Context()` parameters take, of handlers and of their dependencies, e.g. a dataclass of the service's clients.
         middleware: Middleware instances, outermost first (see `BaseMiddleware`). Pass exception rules as `exception_rules`, not as an `ExceptionMiddleware`.
         exception_rules: Rules that retry or recover from handler exceptions, tried in order (see `ExceptionMiddleware`). They run inside `middleware`, so e.g. tracing and metrics see one call per record, including its retries. An exception that no rule handles stops the record's partition, or fails the run (see `Config.stop_failed_partitions`). To apply a rule to some topics only, use `on(..., topics=...)`.
         max_concurrency: The maximum number of handler calls that run at once, across all partitions and topics, e.g. the size of a database pool, or None for no limit. Like each handler's own `max_concurrency`, it limits only handler calls, so retry backoff holds no slot.
@@ -47,7 +47,7 @@ def build_runtime(
         The runtime. Call its `run()` to run it.
 
     Raises:
-        RegistrationError: If the routers have no handlers, two routers handle the same topic, a handler takes `Context()` and there is no `context`, or `middleware` includes an `ExceptionMiddleware`.
+        RegistrationError: If the routers have no handlers, two routers handle the same topic, a handler or one of its dependencies takes `Context()` and there is no `context`, or `middleware` includes an `ExceptionMiddleware`.
         TypeError: If a router is not a `Router`, a middleware is not a `BaseMiddleware` instance, or an exception rule is a type or is not callable.
         ValueError: If `max_concurrency` is not a positive integer or None.
 

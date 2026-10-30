@@ -50,6 +50,7 @@ anyio.run(runtime.run)
 - One transactional producer per app commits outputs and offsets for all partitions together (KIP-447).
 - Partitions run concurrently, and records within a partition run in order, or with key concurrency, in order per key. A handler can run for minutes without dropping the app from its consumer group.
 - A `Topic` declares its value and key types, and type checkers check every record a handler returns.
+- Handlers take dependencies in the style of FastAPI's `Depends`, e.g. a database transaction that commits or rolls back after each record.
 - A failing handler stops only its own partition. Middleware adds retries and dead letter topics.
 - The app shuts down on SIGTERM after it commits finished work. Its liveness and readiness checks are ready to serve as Kubernetes probes from any HTTP framework.
 - OpenTelemetry tracing follows each record through its handler, and its outputs to the transaction that commits them.

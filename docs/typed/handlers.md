@@ -26,7 +26,7 @@ async def audit(
 ) -> None: ...
 ```
 
-The one parameter without a marker takes the value. Its type must be the topic's value type, or `bytes` for the raw value. A `Key()` parameter takes the topic's key type, or `bytes`. A mismatch raises `RegistrationError` when the handler is registered, before the app starts. A `Context()` parameter takes the run's [context](index.md#context).
+The one parameter without a marker takes the value. Its type must be the topic's value type, or `bytes` for the raw value. A `Key()` parameter takes the topic's key type, or `bytes`. A mismatch raises `RegistrationError` when the handler is registered, before the app starts. A `Context()` parameter takes the run's [context](index.md#context), and a `Depends()` parameter takes a [dependency](#dependencies)'s result.
 
 A missing or null part takes the parameter's default, or `None` if the type allows it. A part that doesn't decode raises `DecodeError` from the handler call. Exception rules handle it like any other handler error.
 
@@ -38,6 +38,58 @@ async def sync(order: Order | None, customer: Annotated[str, Key()]) -> None:
     if order is None:
         ...  # The customer's order was deleted.
 ```
+
+## Dependencies
+
+A dependency is a function whose result a handler takes, such as the customer that a record's key names, or a database transaction for each record. It can be a function, sync or async, a class, or a callable object, and its parameters take the same markers as a handler's. A handler takes its result with `Depends()`:
+
+```python
+from typing import Annotated
+
+from potik import Context, Depends, Header, Key
+
+
+def tenant(name: Annotated[str, Header("x-tenant")]) -> str:
+    return name.lower()
+
+
+async def customer(
+    key: Annotated[str, Key()],
+    tenant: Annotated[str, Depends(tenant)],
+    services: Annotated[Services, Context()],
+) -> Customer:
+    return await services.customers.get(tenant, key)
+
+
+@router.handler(orders)
+async def accept(order: Order, customer: Annotated[Customer, Depends(customer)]) -> ProducerRecord: ...
+```
+
+Registration checks a dependency's parameters against the topic, like the handler's. A call decodes each part of the record once, so a dependency that takes the value gets the same object as the handler. A sync dependency runs on the event loop, so it must not block.
+
+Each handler call resolves its dependencies anew, one at a time, in parameter order. A dependency that several parameters take runs once per call. A retry by an [exception rule](../middleware/exceptions.md) resolves them again. To fetch several things at once, write one dependency that fetches them in a task group.
+
+A dependency that yields gives the handler the value that it yields, and runs the rest of its body after the handler returns or raises. If the handler raised, `yield` raises the exception in the dependency, so that it can roll back. The dependency can't suppress the exception, so the exception rules still handle it. If the code after `yield` raises, the record fails as if the handler had raised.
+
+A revocation or shutdown cancels the call, and the code after `yield` then runs cancelled. Shield the awaits that must finish, with a timeout:
+
+```python
+async def transaction(services: Annotated[Services, Context()]) -> AsyncIterator[Transaction]:
+    tx = await services.db.begin()
+    try:
+        yield tx
+    except BaseException:
+        with anyio.move_on_after(5, shield=True):
+            await tx.rollback()
+        raise
+    await tx.commit()
+```
+
+A dependency can also limit how long each call runs. Around `yield`, `anyio.fail_after(10)` fails a call that runs longer, so exception rules handle it. `anyio.move_on_after(10)` ends the call without outputs, and its record commits, so it is neither retried nor dead-lettered. The deadline also covers the code after `yield` of the dependencies that the handler takes after it, e.g. a transaction's commit.
+
+The commit after `yield` runs before Kafka commits the handler's outputs, so like the handler's other [side effects](#side-effects), it can happen more than once.
+
+In a unit test, pass the dependency's result to the handler directly. In an app test, pass fakes through the run's [context](index.md#context), which dependencies take as `Context()`.
 
 ## Outputs
 

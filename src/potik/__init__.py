@@ -16,7 +16,7 @@ from potik.core.types import (
     ProducerRecord,
     RuntimeStatus,
 )
-from potik.handler import Context, DecodeError, HandlerResult, Header, Key
+from potik.handler import Context, DecodeError, Depends, HandlerResult, Header, Key
 from potik.middleware.topics import TopicCheckError
 from potik.router import RegistrationError, Router
 from potik.topic import EncodeError, OutputTopic, Topic
@@ -27,6 +27,7 @@ __all__ = [
     "Context",
     "DecodeError",
     "Delivery",
+    "Depends",
     "EncodeError",
     "HandlerResult",
     "Header",
