@@ -16,7 +16,7 @@ from confluent_kafka import Consumer, KafkaException, Message, TopicPartition
 from potik.core import health
 from potik.core.committer import Committer
 from potik.core.config import Config
-from potik.core.consumer import ConsumerThread
+from potik.core.consumer import ConsumerThread, _watermarks
 from potik.core.errors import PartitionsLostError
 from potik.core.middleware import (
     BaseMiddleware,
@@ -398,7 +398,7 @@ class Runtime:
                 raise KafkaException(position.error)
             topic, partition = position.topic, position.partition
             committed = position.offset if position.offset >= 0 else None
-            watermarks = partial(_watermarks, consumer, TopicPartition(topic, partition), remaining)
+            watermarks = partial(_watermarks, consumer, TopicPartition(topic, partition), deadline)
             context = OffsetContext(topic, partition, committed, watermarks=watermarks)
             offset = _resolve_offset(self._config.offset_policy, context)
             assignment.append(TopicPartition(topic, partition, offset))
@@ -496,13 +496,6 @@ def _fail_after(seconds: float, message: str) -> Generator[None]:
         yield
     if scope.cancelled_caught:
         raise TimeoutError(message)
-
-
-def _watermarks(consumer: Consumer, position: TopicPartition, timeout: Callable[[], float]) -> tuple[int, int]:
-    """Read the first and end offsets of `position`'s log from the broker."""
-    if (bounds := consumer.get_watermark_offsets(position, timeout=timeout())) is None:
-        raise TimeoutError(f"timed out reading the first and end offsets of {position.topic}[{position.partition}]")
-    return bounds
 
 
 def _names(partitions: Iterable[TopicPartition]) -> str:

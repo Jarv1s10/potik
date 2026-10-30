@@ -15,6 +15,7 @@ from anyio.lowlevel import EventLoopToken
 from confluent_kafka import OFFSET_BEGINNING, Consumer, KafkaError, KafkaException, TopicPartition
 
 from potik.core.config import _client_config
+from potik.core.consumer import _watermarks
 from potik.core.types import ConsumerRecord
 
 __all__ = [
@@ -196,7 +197,8 @@ class ReplyListener:
         """Assign every partition of the reply topic at its end offset, which a reply to a later request follows."""
         assigned = []
         for partition in self._partitions(consumer, _METADATA_TIMEOUT):
-            _, end = consumer.get_watermark_offsets(TopicPartition(self._topic, partition), timeout=_METADATA_TIMEOUT)
+            deadline = time.monotonic() + _METADATA_TIMEOUT
+            _, end = _watermarks(consumer, TopicPartition(self._topic, partition), deadline)
             assigned.append(TopicPartition(self._topic, partition, end))
         consumer.assign(assigned)
 
