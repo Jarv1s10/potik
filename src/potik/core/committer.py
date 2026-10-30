@@ -45,7 +45,7 @@ class Committer:
         self._delivery_error: KafkaError | None = None
         self._producer = Producer(config._producer_config(self._on_failed_delivery))
         self._consumer = consumer
-        self._init_timeout = config.transaction_timeout_ms / 1000
+        self._timeout = config.transaction_timeout_ms / 1000
         self._interval = config.commit_interval_ms / 1000
         self._capacity = config.commit_batch_size
         # Producer calls block in C, so they run on a worker thread. They are joined, never abandoned, when the awaiting task is cancelled.
@@ -64,9 +64,10 @@ class Committer:
         self._pending_since: float | None = None  # monotonic time the batch became non-empty
         self._committing_since: float | None = None
         self._stopped: BaseException | None = None
+        self._in_transaction = False  # begun, and neither committed nor aborted
 
     async def start(self) -> None:
-        await anyio.to_thread.run_sync(self._producer.init_transactions, self._init_timeout, limiter=self._thread)
+        await anyio.to_thread.run_sync(self._producer.init_transactions, self._timeout, limiter=self._thread)
 
     @property
     def full(self) -> bool:
@@ -175,6 +176,7 @@ class Committer:
         # A failed commit notes the first failed delivery of its own attempt, not of an attempt aborted before it.
         self._delivery_error = None
         producer.begin_transaction()
+        self._in_transaction = True
         try:
             produce = producer.produce
             for topic, key, value, headers, partition in outputs:
@@ -184,25 +186,38 @@ class Committer:
                     # The client queue is full. Deliver the queued outputs first. It returns within message.timeout.ms, which librdkafka keeps at or below transaction.timeout.ms.
                     producer.flush()
                     produce(topic, value, key, partition, headers=headers)
-            # Transactional API timeouts default to the remaining transaction timeout.
+            # Without a timeout, it waits for the rest of the transaction timeout. librdkafka 2.16.0 can still wait until a broker is up again, whatever the timeout, if its offset commit loses its connection (DESIGN.md, Bounded transactions).
             producer.send_offsets_to_transaction(offsets, metadata)
         except BaseException:
-            producer.abort_transaction()
+            self._abort()
             raise
         try:
-            producer.commit_transaction()
+            # Without a timeout, librdkafka 2.16.0 waits for the commit and the abort forever, e.g. for a coordinator that it cannot find after a broker outage, though its docs promise the rest of the transaction timeout. A timeout leaves the transaction in progress, so it fails the run.
+            producer.commit_transaction(self._timeout)
         except KafkaException as exc:
             # Noted first, so that the note survives an abort that raises. Its error then chains this one.
             if self._delivery_error is not None:
                 exc.add_note(f"first failed delivery: {self._delivery_error}")
             # Abort only a commit known to have failed. Leave an unknown outcome to the coordinator, and never retry or abort it.
             if exc.args[0].txn_requires_abort():
-                producer.abort_transaction()
+                self._abort()
             raise
+        self._in_transaction = False
+
+    def _abort(self) -> None:
+        self._producer.abort_transaction(self._timeout)
+        self._in_transaction = False
 
     def _on_failed_delivery(self, error: KafkaError, message: Message) -> None:
         if self._delivery_error is None and error.code() not in _PURGED:
             self._delivery_error = error
 
     async def close(self) -> None:
-        await anyio.to_thread.run_sync(self._producer.close, limiter=self._thread)
+        await anyio.to_thread.run_sync(self._close, limiter=self._thread)
+
+    def _close(self) -> None:
+        if self._in_transaction:
+            # Producer.close() would abort the transaction, or resume an abort that timed out, without a timeout (confluent-kafka 2.16.0). Destroying the client instead leaves the transaction to its coordinator, which aborts it after transaction.timeout.ms.
+            del self._producer
+        else:
+            self._producer.close()
