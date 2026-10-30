@@ -2,17 +2,21 @@
 
 import asyncio
 import threading
+import time
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
 from queue import SimpleQueue
 from typing import Any
 
 import anyio
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
 
 __all__: list[str] = []
 
 type _Call = Callable[[Consumer], None]
+
+_LOST_CONNECTION = frozenset({KafkaError._TRANSPORT, KafkaError._DESTROY_BROKER})
+_RETRY_BACKOFF = 0.1  # seconds
 
 
 class ConsumerThread:
@@ -77,3 +81,19 @@ class ConsumerThread:
 
 def _wake(consumer: Consumer) -> None:
     """Unblock `run_on_loop()` when the loop's work finishes."""
+
+
+def _watermarks(consumer: Consumer, position: TopicPartition, deadline: float) -> tuple[int, int]:
+    """Read the first and end offsets of `position`'s log from the broker by the monotonic `deadline`."""
+    while (timeout := deadline - time.monotonic()) > 0:
+        try:
+            bounds = consumer.get_watermark_offsets(position, timeout=timeout)
+        except KafkaException as exc:
+            # librdkafka 2.16.0 fails the read, rather than retrying it, when it loses the connection, e.g. to an IPv6 address that the broker does not listen on, or destroys its broker handle, e.g. the bootstrap one.
+            if exc.args[0].code() not in _LOST_CONNECTION:
+                raise
+            time.sleep(min(_RETRY_BACKOFF, max(deadline - time.monotonic(), 0)))
+            continue
+        if bounds is not None:
+            return bounds
+    raise TimeoutError(f"timed out reading the first and end offsets of {position.topic}[{position.partition}]")
