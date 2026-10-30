@@ -25,6 +25,8 @@ On SIGTERM, `run()` shuts down gracefully, as described in [Runs](index.md#runs)
 
 Kubernetes kills a pod `terminationGracePeriodSeconds` after SIGTERM, 30 seconds by default. Keep `shutdown_grace_ms` well below that, so the final commit has time to finish. A `Producer` then waits up to its `close_timeout`, 10 seconds by default, for its last sends, and fails those still pending.
 
+A broker outage longer than `transaction_timeout_ms` fails the run, usually while the outage lasts. A transaction that loses its broker while it commits its offsets can wait until a broker returns, though, and the run then ignores SIGTERM until it does. Kubernetes kills the pod after `terminationGracePeriodSeconds`, and the [liveness probe](#health-checks) restarts it, because its records stay uncommitted.
+
 Only one run in a process can handle signals. To run several runtimes at once, for example for two consumer groups, pass `handle_signals=False` to each and cancel them on a signal yourself:
 
 ```python
