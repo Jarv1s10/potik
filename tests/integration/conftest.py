@@ -7,8 +7,10 @@ The `workload` fixture gives each test uniquely named topics and groups, and del
 
 import itertools
 import os
+import sys
 import time
 from collections.abc import Callable, Iterator
+from contextlib import suppress
 from pathlib import Path
 from uuid import uuid4
 
@@ -37,6 +39,18 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
             kept = "\n".join(f"{work.source}, {work.target}, group {work.group}" for work in works)
             report.sections.append(("kept for inspection", kept))
     return report
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> Iterator[None]:
+    """Drop a failed test's exception before its fixtures tear down.
+
+    pytest keeps it in `sys.last_exc` until the next test runs. Its frames hold the test's clients, e.g. its workload's `AdminClient`, which would otherwise outlive the broker and log reconnection errors until every xdist worker is done.
+    """
+    for name in ("last_exc", "last_type", "last_value", "last_traceback"):
+        with suppress(AttributeError):
+            delattr(sys, name)
+    return (yield)
 
 
 def failed(item: pytest.Item) -> bool:

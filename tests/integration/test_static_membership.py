@@ -27,7 +27,7 @@ def undecided(work) -> int:
 def supervise(work, apps, instance, deadline: float, **config):
     """Restart the instance whenever its run fails, like a supervisor, until the input is committed, and return it."""
     expected = [work.records // work.partitions] * work.partitions
-    while work.wait_committed(2, expected) != expected:
+    while work.committed_within(2, expected) != expected:
         assert time.monotonic() < deadline, f"the input was not committed, see {instance.log}"
         if not instance.alive():
             instance = apps(work, **config)
