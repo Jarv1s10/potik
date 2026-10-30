@@ -88,12 +88,14 @@ class Workload:
             consumer.close()
         return [tp.offset if tp.offset >= 0 else -1 for tp in positions]
 
-    def wait_committed(self, timeout: float, expected: list[int] | None = None) -> list[int]:
-        """Wait until the committed offsets reach `expected`, by default the whole input, or `timeout` passes.
+    def wait_committed(self, timeout: float) -> None:
+        """Wait until the whole input is committed. Fail if it is not within `timeout`."""
+        expected = [self.records // self.partitions] * self.partitions
+        offsets = self.committed_within(timeout, expected)
+        assert offsets == expected, f"committed {offsets} of {expected} within {timeout}s"
 
-        Return the last committed offsets read.
-        """
-        expected = expected or [self.records // self.partitions] * self.partitions
+    def committed_within(self, timeout: float, expected: list[int]) -> list[int]:
+        """Return the committed offsets once they reach `expected`, or the last ones read once `timeout` passes."""
         deadline = time.monotonic() + timeout
         while True:
             try:
