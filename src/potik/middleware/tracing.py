@@ -146,7 +146,8 @@ class TracingMiddleware(BaseMiddleware):
                 except Exception as exc:
                     _set_error(span, exc)
                     raise
-                if isinstance(outputs, (list, tuple)):  # The runtime's own check rejects invalid outputs.
+                # The runtime's own check rejects invalid outputs, e.g. a single ProducerRecord, which is a tuple too.
+                if isinstance(outputs, (list, tuple)) and not isinstance(outputs, ProducerRecord):
                     outputs = [
                         self._create(output) if isinstance(output, ProducerRecord) else output for output in outputs
                     ]

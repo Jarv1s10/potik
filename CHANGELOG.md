@@ -2,6 +2,10 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
+## Unreleased
+
+- `TracingMiddleware` no longer unpacks a single `ProducerRecord` that a middleware returns in place of a list, so the runtime reports the mistake as such instead of as a `str` in the list.
+
 ## 0.2.0 (2026-10-30)
 
 - `Depends()` gives handlers dependencies in the style of FastAPI: sync and async functions, and functions that yield, whose code after `yield` runs after each handler call and sees its exception. A dependency's parameters take parts of the record, the run's context, and other dependencies, and registration checks them against the topic. A call decodes each part of the record once for all the parameters that take it, and a dependency can limit how long a call runs with `anyio.fail_after()` or `anyio.move_on_after()` around `yield`.
