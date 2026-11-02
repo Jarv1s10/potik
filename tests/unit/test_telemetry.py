@@ -12,6 +12,7 @@ pytest.importorskip("opentelemetry.sdk")
 import functools
 import operator
 
+from opentelemetry.metrics import _internal as metrics_api
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader, NumberDataPoint
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -179,10 +180,17 @@ async def test_metrics_have_only_semantic_convention_attributes(attributes: Coll
     assert operations == {"process", "send", "commit"}
 
 
-async def test_metrics_count_the_stopped_partitions_of_every_run() -> None:
-    """Each run's partitions report 1 if stopped, else 0, also when several middleware share a meter provider."""
+@pytest.mark.parametrize(
+    "named", [(True, True), (False, True), (True, False)], ids=["explicit", "global-first", "global-last"]
+)
+async def test_metrics_count_the_stopped_partitions_of_every_run(named: tuple[bool, bool], monkeypatch) -> None:
+    """Each run's partitions report 1 if stopped, else 0, also when several middleware share a meter provider.
+
+    The SDK keeps only the first registration's callback, so it must also observe the middleware that name the same provider another way: explicitly, or as the global one.
+    """
     reader = InMemoryMetricReader()
     provider = MeterProvider(metric_readers=[reader])
+    monkeypatch.setattr(metrics_api, "_METER_PROVIDER", provider)  # The global provider, which tests may set only once.
 
     def run(group: str, *failures: Exception | None) -> RunScope:
         partitions = tuple(
@@ -219,7 +227,7 @@ async def test_metrics_count_the_stopped_partitions_of_every_run() -> None:
         group, partition = "messaging.consumer.group.name", "messaging.destination.partition.id"
         return {((p.attributes or {})[group], (p.attributes or {})[partition]): p.value for p in points}
 
-    shop, billing = MetricsMiddleware(meter_provider=provider), MetricsMiddleware(meter_provider=provider)
+    shop, billing = (MetricsMiddleware(meter_provider=provider if explicit else None) for explicit in named)
     async with shop.lifespan(run("shop", ValueError("poison"), None)), billing.lifespan(run("billing", None)):
         assert stopped() == {("shop", "0"): 1, ("shop", "1"): 0, ("billing", "0"): 0}
     assert stopped() == {}

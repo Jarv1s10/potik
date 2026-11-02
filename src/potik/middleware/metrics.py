@@ -197,8 +197,10 @@ _running: dict[MetricsMiddleware, None] = {}
 def _observe_stopped(meter_provider: MeterProvider | None, options: CallbackOptions) -> Iterable[Observation]:
     """Count the stopped partitions of each run whose middleware uses `meter_provider`. Runs on the exporter's thread."""
     counts: Counter[tuple[tuple[str, AttributeValue], ...]] = Counter()
+    # Resolved now, since the instances that use the global provider and those given it explicitly share this callback. The global one is set by the time an SDK reader calls it.
+    provider = meter_provider or metrics.get_meter_provider()
     for middleware in _running.copy():  # dict.copy() is atomic, while the loop changes the dict.
-        if middleware._meter_provider is not meter_provider:
+        if (middleware._meter_provider or metrics.get_meter_provider()) is not provider:
             continue
         for partition in middleware._status().partitions:
             attributes = {
