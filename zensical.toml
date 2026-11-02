@@ -71,6 +71,7 @@ pymdownx.superfences = {}
 paths = ["src"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
+extensions = ["tools/docs_extensions.py:_OmittedContext"]
 show_root_heading = true
 show_source = false
 docstring_style = "google"

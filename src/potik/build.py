@@ -37,7 +37,7 @@ def build_runtime(
     Args:
         config: The runtime limits and client options.
         routers: The routers whose handlers to run. The runtime copies their handlers, so later registrations have no effect.
-        context: What `Context()` parameters take, of handlers and of their dependencies, e.g. a dataclass of the service's clients.
+        context: What `Context()` parameters take, of handlers and of their dependencies, e.g. a dataclass of the service's clients. The `...` default in this reference means omitted, not an Ellipsis value. Omit it only when no parameter takes `Context()`. Passing `None` supplies a context.
         middleware: Middleware instances, outermost first (see `BaseMiddleware`). Pass exception rules as `exception_rules`, not as an `ExceptionMiddleware`.
         exception_rules: Rules that retry or recover from handler exceptions, tried in order (see `ExceptionMiddleware`). They run inside `middleware`, so e.g. tracing and metrics see one call per record, including its retries. An exception that no rule handles stops the record's partition, or fails the run (see `Config.stop_failed_partitions`). To apply a rule to some topics only, use `on(..., topics=...)`.
         max_concurrency: The maximum number of handler calls that run at once, across all partitions and topics, e.g. the size of a database pool, or None for no limit. Like each handler's own `max_concurrency`, it limits only handler calls, so retry backoff holds no slot.
