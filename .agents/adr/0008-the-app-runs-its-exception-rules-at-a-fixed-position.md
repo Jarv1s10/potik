@@ -1,6 +1,8 @@
 # The App runs its exception rules at a fixed position, with no defaults
 
-Partly superseded by ADR 0011.
+Partly superseded by [ADR 0011](0011-the-typed-layer-builds-a-runtime.md). The typed entry point is now `potik.build_runtime(exception_rules=[...])`, with no App or router middleware. The rules still run inside user middleware and outside the concurrency limits. `build_runtime()` still rejects an `ExceptionMiddleware` in user middleware, and a core `Runtime` still leaves its position to the user. The fixed ordering and rejection of default rules remain in effect.
+
+## Original decision
 
 An App takes its exception rules as `App(exception_rules=[...])` and runs them in one `ExceptionMiddleware`, inside all of its middleware and outside router middleware and the concurrency limits, as Starlette places its own `ExceptionMiddleware` inside the user's. Tracing and metrics then always see one call per record, with its retries, and its recovered outcome, without users having to order them. The App rejects an `ExceptionMiddleware` among its middleware, so its rules have one place. Routers keep `ExceptionMiddleware` as ordinary middleware, which sees their records' exceptions before the App's rules. A core Runtime still takes `ExceptionMiddleware` as an instance and leaves its position to the user, as ADR 0003 does for the topic check.
 
