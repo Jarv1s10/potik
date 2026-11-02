@@ -37,6 +37,10 @@ class EncodeError(PotikError, PermanentError):
         self.topic = topic
 
 
+# Type checkers let an int stand for a float, and an int or a float for a complex (PEP 484), so outputs may hold them.
+_PROMOTED: dict[type, tuple[type, ...]] = {float: (float, int), complex: (complex, float, int)}
+
+
 @dataclass(frozen=True, slots=True)
 class _Codec[T]:
     """Converts a topic's keys or values. Exactly one of `decode` and `resolve` is set, by the serde's kind."""
@@ -44,7 +48,7 @@ class _Codec[T]:
     decode: Decoder[T] | None
     resolve: Resolver[T] | None
     encode: Encoder[T]
-    instance_of: type | None  # the class of the objects to encode, if isinstance() can check it
+    instance_of: type | tuple[type, ...] | None  # the classes of the objects to encode, if isinstance() can check them
 
     async def decoded(self, data: bytes) -> T:
         decode = self.decode if self.resolve is None else await self.resolve(data)
@@ -181,7 +185,7 @@ class Topic(Generic[_V, _K]):
     def _encode_part[T](self, obj: T, tp: object, codec: _Codec[T], part: str) -> bytes:
         # Serdes may not check: pydantic serializes any object with the model's attributes as the model, and True as an int's 1. bool subclasses int, so it is checked apart.
         if (cls := codec.instance_of) is not None and (
-            not isinstance(obj, cls) or (cls is int and isinstance(obj, bool))
+            not isinstance(obj, cls) or (isinstance(obj, bool) and (cls is int or cls in _PROMOTED.values()))
         ):
             raise EncodeError(
                 f"topic {self.name!r} takes {_type_name(tp)} {part}s, got {_type_name(type(obj))}", topic=self.name
@@ -215,12 +219,14 @@ def _codec(context: SerdeContext, serde: Serde | AsyncSerde, tp: TypeForm[Any]) 
     return _Codec(decode, resolve, encode, _instance_of(tp))
 
 
-def _instance_of(tp: object) -> type | None:
-    """Return the class that `tp`'s objects are instances of, or None if `isinstance()` cannot check them."""
+def _instance_of(tp: object) -> type | tuple[type, ...] | None:
+    """Return the classes that `tp`'s objects are instances of, or None if `isinstance()` cannot check them."""
     if is_typeddict(tp):
         return dict
     if not isinstance(tp, type):
         return None
+    if tp in _PROMOTED:
+        return _PROMOTED[tp]
     try:
         isinstance(None, tp)
     except TypeError:  # e.g. a Protocol that is not runtime_checkable
