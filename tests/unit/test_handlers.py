@@ -311,6 +311,16 @@ async def test_topics_encode_keys_as_their_key_type() -> None:
         Topic("counts", int)(True, key=None)
 
 
+async def test_topics_of_floats_take_ints_as_type_checkers_do() -> None:
+    """Type checkers accept an int for a float, so the topic does too. A bool stays rejected, as for an int."""
+    prices = Topic("prices", float, serde=JSON)
+    assert prices(1, key=None).value == b"1.0"
+    with pytest.raises(EncodeError, match="takes float values, got bool"):
+        prices(True, key=None)
+    with pytest.raises(EncodeError, match="takes float values, got str"):
+        prices("1", key=None)  # ty: ignore[invalid-argument-type]
+
+
 async def test_topics_of_typed_dicts_take_dicts() -> None:
     """`isinstance()` cannot check a TypedDict, so the topic checks for a dict and leaves the rest to the serde."""
 
