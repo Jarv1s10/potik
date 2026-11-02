@@ -1,7 +1,7 @@
 """Topic declarations: a name, and the types and serdes of the topic's values and keys."""
 
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, cast, overload
+from typing import Any, Generic, Protocol, Self, cast, overload
 
 from typing_extensions import TypeForm, TypeVar, is_typeddict
 
@@ -141,6 +141,13 @@ class Topic(Generic[_V, _K]):
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError("a Topic is immutable")
+
+    # Immutable, so a copy is the topic itself, as for a tuple. copy's default would set the slots and fail.
+    def __copy__(self) -> Self:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Self:
+        return self
 
     def __call__(
         self, value: _V | None, *, key: _K | None, headers: Headers | None = None, partition: int = -1

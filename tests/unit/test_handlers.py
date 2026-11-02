@@ -1,5 +1,6 @@
 """Typed handlers through a built runtime's pipeline, covering what each parameter takes, what each return value produces, and middleware."""
 
+import copy
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager, suppress
 from contextvars import ContextVar
@@ -1086,6 +1087,9 @@ async def test_msgspec_decodes_and_encodes() -> None:
 async def test_topics_are_immutable_and_decode_their_keys_and_values() -> None:
     with pytest.raises(AttributeError, match="immutable"):
         orders.name = "other"  # ty: ignore[invalid-assignment]
+    # Immutable, so copies of objects that hold topics, e.g. settings, hold the same ones.
+    assert copy.copy(orders) is orders
+    assert copy.deepcopy({"topic": orders})["topic"] is orders
     assert await orders.decode(b'{"sku": "A"}') == Order(sku="A")
     assert await orders.decode_key(b"c1") == "c1"
     assert await Topic("by_number", bytes, key_type=int).decode_key(b"7") == 7
