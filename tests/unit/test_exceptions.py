@@ -9,9 +9,24 @@ from confluent_kafka import Message
 
 from potik import ConsumerRecord, InvalidOutputError, ProducerRecord
 from potik.core.middleware import _chain, _checked
-from potik.middleware import ExceptionContext, ExceptionMiddleware, RetryAfter, dead_letter, on, reraise
+from potik.middleware import (
+    ExceptionContext,
+    ExceptionMiddleware,
+    ExponentialBackoff,
+    RetryAfter,
+    dead_letter,
+    on,
+    reraise,
+)
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("parameter", ["initial_seconds", "max_seconds", "multiplier"])
+def test_backoff_rejects_nan_at_construction(parameter: str) -> None:
+    """Reject invalid backoff settings before a handler fails or a NaN cap silently goes unused."""
+    with pytest.raises(ValueError, match=rf"{parameter}.*NaN"):
+        ExponentialBackoff(**{parameter: math.nan})
 
 
 async def test_fail_stops_the_rules_before_a_rule_for_every_exception() -> None:
