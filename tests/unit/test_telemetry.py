@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Collection, Sequence
+from typing import Any
 
 import pytest
 from confluent_kafka import Message
@@ -95,6 +96,19 @@ async def test_transactions_are_root_client_spans_that_link_to_their_outputs() -
     assert (commit.kind, commit.parent, commit.links) == (SpanKind.CLIENT, None, ())
     assert commit.attributes["messaging.operation.type"] == "settle"
     assert "messaging.batch.message_count" not in commit.attributes
+
+
+async def test_a_single_record_passes_through_for_the_runtime_to_reject() -> None:
+    """A middleware may return a ProducerRecord where a list belongs. Tracing must not unpack it into its fields."""
+    record = ProducerRecord("confirmed", b"customer-1", b"ok")
+
+    async def returns_one(_: ConsumerRecord) -> Any:
+        return record
+
+    middleware = TracingMiddleware(tracer_provider=TracerProvider())
+    async with middleware.lifespan(RUN):
+        outputs = await middleware.handle(Message(topic="orders", partition=1, offset=5), returns_one)
+    assert outputs is record
 
 
 async def test_defaults_add_partitions_offsets_and_client_ids() -> None:
