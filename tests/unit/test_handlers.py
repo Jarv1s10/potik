@@ -126,6 +126,33 @@ async def test_parameters_take_their_parts() -> None:
     }
 
 
+async def test_parameters_read_the_record_that_middleware_passes_on() -> None:
+    """Middleware may pass a record of its own to the handler, e.g. one with a decrypted value. Every parameter reads that record."""
+
+    class Decrypted(Message):
+        def key(self) -> bytes:
+            return b"c2"
+
+        def value(self) -> bytes:
+            return b'{"sku": "B"}'
+
+    class Decrypting(BaseMiddleware):
+        async def handle(self, record: ConsumerRecord, call_next: RecordHandler) -> Sequence[ProducerRecord]:
+            return await call_next(
+                Decrypted(topic=record.topic(), partition=record.partition(), offset=record.offset())
+            )
+
+    router = Router()
+    seen = {}
+
+    @router.handler(orders)
+    async def handle(order: Order, customer: Annotated[str, Key()], record: ConsumerRecord) -> None:
+        seen.update(order=order, customer=customer, value=record.value())
+
+    await handle_one(runtime_of(router, middleware=[Decrypting()]), orders(Order(sku="A"), key="c1"))
+    assert seen == {"order": Order(sku="B"), "customer": "c2", "value": b'{"sku": "B"}'}
+
+
 async def test_context_requires_a_context() -> None:
     router = Router()
 

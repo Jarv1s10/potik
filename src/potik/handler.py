@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Sequ
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from functools import reduce
-from operator import or_
+from operator import methodcaller, or_
 from types import FunctionType, NoneType, UnionType
 from typing import Annotated, Any, TypeAliasType, Union, cast, get_args, get_origin
 
@@ -349,7 +349,7 @@ def _bind(parameter: inspect.Parameter, graph: _Graph) -> tuple[int, Any, bool]:
     topic = graph.topic
     if isinstance(source, Key):
         decode, resolve = _topic_decoder(topic, tp, inner, topic.key_type, topic._key, "keys")
-        return _PENDING, (graph.take("key", Message.key, decode, resolve), parameter, nullable), False
+        return _PENDING, (graph.take("key", _read_key, decode, resolve), parameter, nullable), False
     if isinstance(source, Header):
         name = source.name
         if (decode := source.decoder) is None and inner is not bytes and (decode := _text_decoder(inner)) is None:
@@ -363,7 +363,12 @@ def _bind(parameter: inspect.Parameter, graph: _Graph) -> tuple[int, Any, bool]:
         part = graph.take(f"header {name!r}", last_header, decode, None, None if source.decoder else inner)
         return _PENDING, (part, parameter, nullable), False
     decode, resolve = _topic_decoder(topic, tp, inner, topic.value_type, topic._value, "values")
-    return _PENDING, (graph.take("value", Message.value, decode, resolve), parameter, nullable), True
+    return _PENDING, (graph.take("value", _read_value, decode, resolve), parameter, nullable), True
+
+
+# The record's own methods, not Message's, so that a record that middleware passes on, e.g. a subclass with a decrypted value, reads as it does for the handler.
+_read_key = methodcaller("key")
+_read_value = methodcaller("value")
 
 
 def _finish(arguments: tuple[_Argument, ...]) -> tuple[_Argument, ...]:
