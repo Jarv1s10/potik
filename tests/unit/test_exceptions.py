@@ -1,5 +1,6 @@
 """Exception rules, composed around a checked handler as a run composes them."""
 
+import math
 from collections.abc import Sequence
 
 import anyio
@@ -71,3 +72,15 @@ async def test_rules_see_the_single_exception_of_a_task_group() -> None:
     with pytest.raises(ExceptionGroup) as caught:
         await handle(Message(topic="orders", partition=0, offset=0))
     assert caught.value is several
+
+
+async def test_a_nan_delay_fails_the_record_instead_of_waiting_forever() -> None:
+    """A backoff computed as NaN, e.g. from a malformed Retry-After value, raises with the handler's failure as its context."""
+
+    async def handler(record: ConsumerRecord) -> Sequence[ProducerRecord]:
+        raise TimeoutError("slow")
+
+    handle = _chain([ExceptionMiddleware(lambda context: RetryAfter(math.nan))], "handle", _checked(handler))
+    with anyio.fail_after(1), pytest.raises(ValueError, match="got NaN") as caught:
+        await handle(Message(topic="orders", partition=0, offset=0))
+    assert isinstance(caught.value.__context__, TimeoutError)
