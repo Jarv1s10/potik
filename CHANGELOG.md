@@ -6,6 +6,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 
 - `TracingMiddleware` no longer unpacks a single `ProducerRecord` that a middleware returns in place of a list, so the runtime reports the mistake as such instead of as a `str` in the list.
 - A topic of `float` values or keys takes an `int` too, and one of `complex` an `int` or a `float`, as type checkers do, instead of failing with `EncodeError`.
+- A handler's value and `Key()` parameters read the record that middleware passes to `call_next`, through its own `value()` and `key()`, e.g. a subclass with a decrypted value. They read `confluent_kafka.Message`'s methods before, which ignored the subclass and failed for other record types.
 
 ## 0.2.0 (2026-10-30)
 
