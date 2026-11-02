@@ -4,6 +4,7 @@ import time
 from collections.abc import Collection, Sequence
 from typing import Any
 
+import anyio
 import pytest
 from confluent_kafka import Message
 
@@ -259,6 +260,32 @@ async def test_a_zero_transaction_sample_ratio_traces_only_failed_transactions()
         "builtins.RuntimeError",
     )
     assert transaction.start_time <= failed_at[0]  # It starts when the transaction did, not when it failed.
+
+
+@pytest.mark.parametrize("sample_ratio", [0.0, 1.0])
+async def test_cancelled_transactions_mark_existing_spans_without_forcing_a_sample(sample_ratio: float) -> None:
+    """Cancellation adds an event, not an error, and does not create a span for an unpicked transaction."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    middleware = TracingMiddleware(transaction_sample_ratio=sample_ratio, tracer_provider=provider)
+
+    async def commit(transaction: Transaction) -> None:
+        await anyio.lowlevel.checkpoint()
+
+    async with middleware.lifespan(RUN):
+        with anyio.CancelScope() as scope:
+            scope.cancel()
+            await middleware.commit(Transaction({("orders", 0): 1}, ()), commit)
+    assert scope.cancelled_caught
+    spans = exporter.get_finished_spans()
+    if sample_ratio == 0:
+        assert spans == ()
+    else:
+        [span] = spans
+        assert [event.name for event in span.events] == ["cancelled"]
+        assert span.status.status_code == StatusCode.UNSET
+        assert "error.type" not in span.attributes
 
 
 def test_transaction_sample_ratio_is_a_share() -> None:

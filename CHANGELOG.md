@@ -4,6 +4,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 
 ## Unreleased
 
+- `TracingMiddleware` adds a `cancelled` event to an existing transaction span when its call is cancelled, as it does for handling and sending. Cancellation still does not force a transaction to be sampled.
 - `retry()` and `retry_forever()` keep a supplied backoff even when its callable object is falsy, instead of replacing it with the default.
 - `ExponentialBackoff` rejects NaN in `initial_seconds`, `max_seconds`, and `multiplier` at construction, instead of failing during a retry or silently ignoring a NaN cap.
 - `TracingMiddleware` no longer unpacks a single `ProducerRecord` that a middleware returns in place of a list, so the runtime reports the mistake as such instead of as a `str` in the list.
