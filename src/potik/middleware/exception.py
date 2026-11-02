@@ -103,7 +103,7 @@ class ExponentialBackoff:
         jitter: Whether each wait is a random time between zero and the computed delay, so that partitions do not retry in step.
 
     Raises:
-        ValueError: If a delay is negative, or `multiplier` is less than 1.
+        ValueError: If a delay is negative, `multiplier` is less than 1, or any numeric setting is NaN.
     """
 
     initial_seconds: float = 0.1
@@ -112,12 +112,12 @@ class ExponentialBackoff:
     jitter: bool = False
 
     def __post_init__(self) -> None:
-        if self.initial_seconds < 0:
-            raise ValueError(f"initial_seconds must not be negative, got {self.initial_seconds!r}")
-        if self.max_seconds is not None and self.max_seconds < 0:
-            raise ValueError(f"max_seconds must not be negative, got {self.max_seconds!r}")
-        if self.multiplier < 1:
-            raise ValueError(f"multiplier must be at least 1, got {self.multiplier!r}")
+        if self.initial_seconds < 0 or math.isnan(self.initial_seconds):
+            raise ValueError(f"initial_seconds must not be negative or NaN, got {self.initial_seconds!r}")
+        if self.max_seconds is not None and (self.max_seconds < 0 or math.isnan(self.max_seconds)):
+            raise ValueError(f"max_seconds must not be negative or NaN, got {self.max_seconds!r}")
+        if self.multiplier < 1 or math.isnan(self.multiplier):
+            raise ValueError(f"multiplier must be at least 1 and not NaN, got {self.multiplier!r}")
 
     def __call__(self, context: ExceptionContext[Any]) -> float:
         try:
