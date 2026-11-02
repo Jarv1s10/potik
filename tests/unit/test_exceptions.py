@@ -17,6 +17,8 @@ from potik.middleware import (
     dead_letter,
     on,
     reraise,
+    retry,
+    retry_forever,
 )
 
 pytestmark = pytest.mark.anyio
@@ -27,6 +29,23 @@ def test_backoff_rejects_nan_at_construction(parameter: str) -> None:
     """Reject invalid backoff settings before a handler fails or a NaN cap silently goes unused."""
     with pytest.raises(ValueError, match=rf"{parameter}.*NaN"):
         ExponentialBackoff(**{parameter: math.nan})
+
+
+@pytest.mark.parametrize("forever", [False, True], ids=["retry", "retry-forever"])
+def test_retry_keeps_a_falsy_custom_backoff(forever: bool) -> None:
+    """A supplied backoff need not be truthy to decide the delay."""
+
+    class NoWait:
+        def __bool__(self) -> bool:
+            return False
+
+        def __call__(self, context: ExceptionContext[Exception]) -> float:
+            return 0.0
+
+    backoff = NoWait()
+    rule = retry_forever(backoff=backoff) if forever else retry(max_attempts=2, backoff=backoff)
+    context = ExceptionContext(exception=TimeoutError(), record=Message(), attempt=1)
+    assert rule(context) == RetryAfter(0)
 
 
 async def test_fail_stops_the_rules_before_a_rule_for_every_exception() -> None:
