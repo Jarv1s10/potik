@@ -263,7 +263,7 @@ def retry(*, max_attempts: int, backoff: Backoff | None = None) -> Rule[Exceptio
     """
     if type(max_attempts) is not int or max_attempts < 1:
         raise ValueError(f"max_attempts must be a positive integer, got {max_attempts!r}")
-    return _Retry(max_attempts, backoff or ExponentialBackoff())
+    return _Retry(max_attempts, ExponentialBackoff() if backoff is None else backoff)
 
 
 def retry_forever(*, backoff: Backoff | None = None) -> Rule[Exception]:
@@ -274,7 +274,7 @@ def retry_forever(*, backoff: Backoff | None = None) -> Rule[Exception]:
     Args:
         backoff: Returns the seconds to wait before each retry. Defaults to `ExponentialBackoff()`.
     """
-    return _Retry(None, backoff or ExponentialBackoff())
+    return _Retry(None, ExponentialBackoff() if backoff is None else backoff)
 
 
 @dataclass(frozen=True, slots=True)
