@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
+from functools import partial
 from typing import Annotated, NewType, TypedDict
 
 import anyio.lowlevel
@@ -999,6 +1000,13 @@ async def test_registration_checks_dependencies() -> None:
 
         @Router().handler("orders")
         async def entered(value: bytes, a: Annotated[None, Depends(decorated)]) -> None: ...
+
+    with pytest.raises(
+        RegistrationError, match=r"dependency a partial object is a context manager; remove its decorator"
+    ):
+
+        @Router().handler("orders")
+        async def entered_partially(value: bytes, a: Annotated[None, Depends(partial(decorated))]) -> None: ...
 
     def two_values(a: bytes, b: bytes) -> None: ...
 

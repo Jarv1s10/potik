@@ -18,7 +18,7 @@ import inspect
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from functools import reduce
+from functools import partial, reduce
 from operator import methodcaller, or_
 from types import FunctionType, NoneType, UnionType
 from typing import Annotated, Any, TypeAliasType, Union, cast, get_args, get_origin
@@ -409,7 +409,11 @@ def _dependency(function: Callable[..., Any], graph: _Graph) -> _Dependency:
             calls = kind
             break
     else:
-        codes = {getattr(function, "__code__", None), getattr(type(function).__call__, "__code__", None)}
+        # inspect's tests above see through partials, so this one does too.
+        target = function
+        while isinstance(target, partial):
+            target = target.func
+        codes = {getattr(target, "__code__", None), getattr(type(target).__call__, "__code__", None)}
         if codes & _CONTEXT_MANAGER_CODES:
             raise ValueError(
                 f"dependency {name} is a context manager; remove its decorator, "
