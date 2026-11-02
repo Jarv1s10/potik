@@ -9,6 +9,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 - A handler's value and `Key()` parameters read the record that middleware passes to `call_next`, through its own `value()` and `key()`, e.g. a subclass with a decrypted value. They read `confluent_kafka.Message`'s methods before, which ignored the subclass and failed for other record types.
 - `potik.partition.stopped` reports every run of a meter provider, also when some `MetricsMiddleware` instances use it as the global provider and others are given it explicitly. The runs of the instances that named it the other way than the first one went unreported.
 - A `Depends(functools.partial(fn))` of a function decorated with `@contextmanager` or `@asynccontextmanager` fails registration, as `Depends(fn)` does. The handler got the unentered context manager before, and its teardown never ran.
+- `RetryAfter` rejects a NaN delay with `ValueError`, which stops the partition with the handler's failure as its context. A NaN delay, e.g. from a malformed `Retry-After` value, waited forever before.
 
 ## 0.2.0 (2026-10-30)
 

@@ -1,5 +1,6 @@
 """Retry or recover from a handler's exceptions with rules that are checked in order, like `except` clauses."""
 
+import math
 import random
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -70,9 +71,17 @@ class ExceptionContext[ExcT: Exception]:
 
 @dataclass(frozen=True)
 class RetryAfter:
-    """A decision to call the handler again after `seconds`."""
+    """A decision to call the handler again after `seconds`. A delay of zero or less retries at once.
+
+    Raises:
+        ValueError: If `seconds` is NaN, which would wait forever.
+    """
 
     seconds: float
+
+    def __post_init__(self) -> None:
+        if math.isnan(self.seconds):
+            raise ValueError("RetryAfter seconds must be a number, got NaN, which would wait forever")
 
 
 @dataclass(frozen=True)
