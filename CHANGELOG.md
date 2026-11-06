@@ -2,7 +2,7 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
-## Unreleased
+## 0.3.0 (2026-11-07)
 
 - Reading a newly assigned partition's committed offset retries until `rebalance_timeout_ms` when the coordinator's connection times out, e.g. when a broker stalls for 10 seconds or more, or when the coordinator moves to another broker. The run failed with `Failed to get committed offsets: Local: Timed out` or `NOT_COORDINATOR` before.
 - `potik.testing.handle_record()` runs one record through a runtime's middleware, exception rules, and handler, without Kafka, and returns its outputs, so a test can check decoding, dependencies, rules, and outputs without a `MockCluster`.
