@@ -50,6 +50,8 @@ type Match[ExcT: Exception] = type[ExcT] | tuple[type[ExcT], ...] | Callable[[Ex
 type Backoff = Callable[[ExceptionContext[Any]], float]
 """Returns the seconds to wait before the next attempt, e.g. from a `Retry-After` value that the exception carries."""
 
+# The prefix of the headers that `dead_letter_headers` adds.
+_DLQ_PREFIX = "potik.dlq."
 # The longest exception message in a dead letter's header, in characters. A validation error can list every field, and a header larger than the broker's message size limit would fail the dead letter's transaction.
 _MAX_MESSAGE = 1000
 
@@ -343,7 +345,7 @@ def dead_letter(
 ) -> Rule[Exception]:
     """Write a copy of the failed record to `topic`, as the record's outputs.
 
-    The copy commits in the same transaction as the failed record's offset. It keeps the record's key, value, and headers as bytes, even if they do not decode, and adds the headers that `headers` returns. The producer's partitioner picks its partition from the key, because the dead letter topic may have fewer partitions than the input's.
+    The copy commits in the same transaction as the failed record's offset. It keeps the record's key, value, and headers as bytes, even if they do not decode, and adds the headers that `headers` returns. It drops the record's `potik.dlq.*` headers, and any header with the name of an added one, so that a dead letter that fails again describes only its latest failure. The producer's partitioner picks its partition from the key, because the dead letter topic may have fewer partitions than the input's.
 
     The rule declares `topic` as its output topic, so the topic check covers it. To write a different dead letter, write a rule of your own and declare its topic, e.g. in `Router(output_topics=...)`.
 
@@ -368,9 +370,16 @@ class _DeadLetters:
     def __call__(self, context: ExceptionContext[Exception]) -> Sequence[ProducerRecord]:
         record = context.record
         received = record.headers() or ()
+        added = list(self.headers(context))
+        # A dead letter describes only its latest failure, e.g. of a record that a retry topic sent back.
+        replaced = {name for name, _ in added}
         headers: Headers = [
-            *(received.items() if isinstance(received, Mapping) else received),
-            *self.headers(context),
+            *(
+                (name, value)
+                for name, value in (received.items() if isinstance(received, Mapping) else received)
+                if name not in replaced and not name.startswith(_DLQ_PREFIX)
+            ),
+            *added,
         ]
         return (ProducerRecord(self.topic, record.key(), record.value(), headers),)
 

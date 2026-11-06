@@ -71,6 +71,19 @@ def test_dead_letters_add_the_headers_function_s_headers_after_the_record_s() ->
     )
 
 
+def test_a_dead_letter_that_fails_again_replaces_the_earlier_failure_s_headers() -> None:
+    """Received `potik.dlq.*` headers, and received headers with an added name, give way to the new failure's."""
+
+    def headers(context: ExceptionContext[Exception]) -> list[tuple[str, str]]:
+        return [("potik.dlq.attempts", "1"), ("x-failure", "new")]
+
+    received = [("tenant", b"acme"), ("potik.dlq.exception.message", b"old"), ("x-failure", b"old")]
+    record = Message(topic="orders.retry", partition=0, offset=0, headers=received)
+    context = ExceptionContext(exception=TimeoutError(), record=record, attempt=1)
+    (output,) = dead_letter("dead", headers=headers)(context)
+    assert output.headers == [("tenant", b"acme"), ("potik.dlq.attempts", "1"), ("x-failure", "new")]
+
+
 async def test_rules_see_the_single_exception_of_a_task_group() -> None:
     """A group of several exceptions stays a group, and an unhandled exception propagates as the handler raised it."""
     attempts = 0

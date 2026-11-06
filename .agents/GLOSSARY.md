@@ -110,7 +110,7 @@ A handler failure that would repeat if the handler ran again, e.g. a value that 
 
 ### Dead letter
 
-A copy of a failed input record, with headers that describe the failure, committed to a dead letter topic as the record's Outputs. It lets the partition move past the record without losing it.
+A copy of a failed input record, with headers that describe the failure, committed to a dead letter topic as the record's Outputs. It lets the partition move past the record without losing it. Its headers describe only its latest failure, so a dead letter that fails again replaces the earlier ones.
 
 ### Stopped partition
 

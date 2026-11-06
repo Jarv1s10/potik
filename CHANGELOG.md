@@ -2,6 +2,10 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
+## Unreleased
+
+- A dead letter of a record that already holds `potik.dlq.*` headers, e.g. one that a retry topic sent back, replaces them, and any received header with the name of a header that the `headers` function adds. It kept both before, so a reader that takes a header's first value saw the oldest failure.
+
 ## 0.2.1 (2026-11-06)
 
 - `TracingMiddleware` adds a `cancelled` event to an existing transaction span when its call is cancelled, as it does for handling and sending. Cancellation still does not force a transaction to be sampled.
