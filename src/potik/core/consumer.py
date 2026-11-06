@@ -15,7 +15,17 @@ __all__: list[str] = []
 
 type _Call = Callable[[Consumer], None]
 
-_LOST_CONNECTION = frozenset({KafkaError._TRANSPORT, KafkaError._DESTROY_BROKER})
+# librdkafka 2.16.0 fails a watermark read, rather than retrying it, when it loses the connection, e.g. to an IPv6 address that the broker does not listen on, or destroys its broker handle, e.g. the bootstrap one.
+_WATERMARKS_RETRIED = frozenset({KafkaError._TRANSPORT, KafkaError._DESTROY_BROKER})
+# librdkafka 2.16.0 retries a committed-offsets read that loses its connection or waits for a coordinator, but fails it when the coordinator's connection times out, e.g. when a heartbeat to a stalled broker times out, or when the group's coordinator moves to another broker.
+_COMMITTED_RETRIED = frozenset(
+    {
+        KafkaError._TIMED_OUT,
+        KafkaError._TIMED_OUT_QUEUE,
+        KafkaError.NOT_COORDINATOR,
+        KafkaError.COORDINATOR_NOT_AVAILABLE,
+    }
+)
 _RETRY_BACKOFF = 0.1  # seconds
 
 
@@ -85,15 +95,32 @@ def _wake(consumer: Consumer) -> None:
 
 def _watermarks(consumer: Consumer, position: TopicPartition, deadline: float) -> tuple[int, int]:
     """Read the first and end offsets of `position`'s log from the broker by the monotonic `deadline`."""
+    return _retrying(
+        lambda timeout: consumer.get_watermark_offsets(position, timeout=timeout),
+        _WATERMARKS_RETRIED,
+        deadline,
+        f"the first and end offsets of {position.topic}[{position.partition}]",
+    )
+
+
+def _committed(consumer: Consumer, partitions: list[TopicPartition], deadline: float) -> list[TopicPartition]:
+    """Read the group's committed offsets of `partitions` from its coordinator by the monotonic `deadline`."""
+    return _retrying(
+        lambda timeout: consumer.committed(partitions, timeout=timeout),
+        _COMMITTED_RETRIED,
+        deadline,
+        "the committed offsets",
+    )
+
+
+def _retrying[T](read: Callable[[float], T | None], retried: frozenset[int], deadline: float, what: str) -> T:
+    """Return `read(timeout)` by the monotonic `deadline`, reading again after a `None` or an error in `retried`."""
     while (timeout := deadline - time.monotonic()) > 0:
         try:
-            bounds = consumer.get_watermark_offsets(position, timeout=timeout)
+            if (result := read(timeout)) is not None:
+                return result
         except KafkaException as exc:
-            # librdkafka 2.16.0 fails the read, rather than retrying it, when it loses the connection, e.g. to an IPv6 address that the broker does not listen on, or destroys its broker handle, e.g. the bootstrap one.
-            if exc.args[0].code() not in _LOST_CONNECTION:
+            if exc.args[0].code() not in retried:
                 raise
             time.sleep(min(_RETRY_BACKOFF, max(deadline - time.monotonic(), 0)))
-            continue
-        if bounds is not None:
-            return bounds
-    raise TimeoutError(f"timed out reading the first and end offsets of {position.topic}[{position.partition}]")
+    raise TimeoutError(f"timed out reading {what}")

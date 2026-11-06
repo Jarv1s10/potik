@@ -4,6 +4,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 
 ## Unreleased
 
+- Reading a newly assigned partition's committed offset retries until `rebalance_timeout_ms` when the coordinator's connection times out, e.g. when a broker stalls for 10 seconds or more, or when the coordinator moves to another broker. The run failed with `Failed to get committed offsets: Local: Timed out` or `NOT_COORDINATOR` before.
 - `potik.testing.handle_record()` runs one record through a runtime's middleware, exception rules, and handler, without Kafka, and returns its outputs, so a test can check decoding, dependencies, rules, and outputs without a `MockCluster`.
 - `ProducerRecord` takes a `timestamp`, in milliseconds since the Unix epoch, and so does calling a `Topic`, e.g. to keep an input's event time on its outputs. The default, None, is still the time the producer sends the record. It is the record's last field, so code that unpacks a `ProducerRecord` into its fields needs one more name.
 - `dead_letter_headers` adds `potik.dlq.source.timestamp`, the failed record's timestamp. The dead letter's own timestamp stays the time it is written.

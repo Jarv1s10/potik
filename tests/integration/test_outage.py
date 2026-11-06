@@ -1,9 +1,13 @@
 """A running app must survive broker outages shorter than its transactions, and fail on longer ones, then finish exactly once."""
 
 import subprocess
+import threading
 import time
 
 import pytest
+from confluent_kafka import Consumer
+
+import potik.core.consumer
 
 pytestmark = pytest.mark.slow
 
@@ -53,4 +57,27 @@ def test_outage_longer_than_a_transaction_fails_the_run(workload, apps, broker) 
     successor = apps(work)
     work.wait_committed(timeout=120)
     assert successor.stop() == 0, f"graceful stop failed, see {successor.log}"
+    work.assert_exactly_once()
+
+
+@pytest.mark.anyio
+async def test_assignment_survives_a_stalled_coordinator(workload, broker, monkeypatch) -> None:
+    """A broker that stalls while a new owner reads its committed offsets times out the coordinator's connection.
+
+    librdkafka then fails the read, long before the assignment's `rebalance_timeout_ms`, so the runtime must retry it.
+    """
+    work = workload(2, 20)
+    stalled = threading.Event()
+
+    class StallingConsumer(Consumer):
+        def committed(self, partitions, timeout=None):
+            if not stalled.is_set():  # The first read, of the first assignment.
+                stalled.set()
+                broker.pause()
+                # Longer than a heartbeat interval (Kafka's 5s default) plus a heartbeat request's timeout, the same 5s.
+                threading.Timer(15, broker.unpause).start()
+            return super().committed(partitions, timeout=timeout)
+
+    monkeypatch.setattr(potik.core.consumer, "Consumer", StallingConsumer)
+    await work.run_until_committed(work.runtime())
     work.assert_exactly_once()

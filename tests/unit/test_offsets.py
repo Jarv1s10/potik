@@ -7,7 +7,7 @@ import pytest
 from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
 
 from potik.core import InvalidOffsetError, OffsetContext, resume_or_earliest, resume_or_fail, resume_or_latest
-from potik.core.consumer import _watermarks
+from potik.core.consumer import _committed, _watermarks
 from potik.core.offsets import _resolve_offset
 
 
@@ -42,15 +42,22 @@ def test_a_position_outside_the_log_is_rejected() -> None:
 
 
 class FlakyConsumer:
-    """Fails its watermark reads with `errors`, in order, then returns the log's bounds."""
+    """Fails its reads with `errors`, in order, then returns the log's bounds or the committed offsets."""
 
     def __init__(self, *errors: int) -> None:
         self.errors = list(errors)
 
     def get_watermark_offsets(self, position: TopicPartition, timeout: float) -> tuple[int, int]:
+        self._fail()
+        return 5, 9
+
+    def committed(self, partitions: list[TopicPartition], timeout: float) -> list[TopicPartition]:
+        self._fail()
+        return [TopicPartition(tp.topic, tp.partition, 7) for tp in partitions]
+
+    def _fail(self) -> None:
         if self.errors:
             raise KafkaException(KafkaError(self.errors.pop(0)))
-        return 5, 9
 
 
 def test_reading_the_log_bounds_retries_a_lost_connection() -> None:
@@ -66,3 +73,25 @@ def test_reading_the_log_bounds_fails_on_other_errors_and_at_the_deadline() -> N
         _watermarks(cast(Consumer, consumer), position, time.monotonic() + 10)
     with pytest.raises(TimeoutError, match=r"orders\[0\]"):
         _watermarks(cast(Consumer, FlakyConsumer(*[KafkaError._TRANSPORT] * 100)), position, time.monotonic() + 0.3)
+
+
+def test_reading_committed_offsets_retries_a_timed_out_or_moved_coordinator() -> None:
+    errors = (
+        KafkaError._TIMED_OUT,
+        KafkaError._TIMED_OUT_QUEUE,
+        KafkaError.NOT_COORDINATOR,
+        KafkaError.COORDINATOR_NOT_AVAILABLE,
+    )
+    consumer = FlakyConsumer(*errors)
+    committed = _committed(cast(Consumer, consumer), [TopicPartition("orders", 0)], time.monotonic() + 10)
+    assert [(tp.topic, tp.partition, tp.offset) for tp in committed] == [("orders", 0, 7)]
+
+
+def test_reading_committed_offsets_fails_on_other_errors_and_at_the_deadline() -> None:
+    partitions = [TopicPartition("orders", 0)]
+    with pytest.raises(KafkaException, match="GROUP_AUTHORIZATION_FAILED"):
+        consumer = FlakyConsumer(KafkaError.GROUP_AUTHORIZATION_FAILED)
+        _committed(cast(Consumer, consumer), partitions, time.monotonic() + 10)
+    with pytest.raises(TimeoutError, match="committed offsets"):
+        consumer = FlakyConsumer(*[KafkaError._TIMED_OUT] * 100)
+        _committed(cast(Consumer, consumer), partitions, time.monotonic() + 0.3)
