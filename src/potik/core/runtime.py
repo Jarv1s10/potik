@@ -16,7 +16,7 @@ from confluent_kafka import Consumer, KafkaException, Message, TopicPartition
 from potik.core import health
 from potik.core.committer import Committer
 from potik.core.config import Config
-from potik.core.consumer import ConsumerThread, _watermarks
+from potik.core.consumer import ConsumerThread, _committed, _watermarks
 from potik.core.errors import PartitionsLostError
 from potik.core.middleware import (
     BaseMiddleware,
@@ -384,16 +384,10 @@ class Runtime:
         if self._stopping or not partitions:
             return  # The client assigns them itself, and no partition handles them.
         deadline = time.monotonic() + self._rebalance_timeout
-
-        def remaining() -> float:
-            if (budget := deadline - time.monotonic()) <= 0:
-                raise TimeoutError("partition assignment exceeded rebalance_timeout_ms")
-            return budget
-
         assignment = []
         policy_offsets = []
         # With read_committed, this waits for a previous owner's pending transaction to finish, instead of returning the offset it replaces.
-        for position in consumer.committed(partitions, timeout=remaining()):
+        for position in _committed(consumer, partitions, deadline):
             if position.error is not None:
                 raise KafkaException(position.error)
             topic, partition = position.topic, position.partition
