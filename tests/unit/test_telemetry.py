@@ -291,3 +291,37 @@ async def test_cancelled_transactions_mark_existing_spans_without_forcing_a_samp
 def test_transaction_sample_ratio_is_a_share() -> None:
     with pytest.raises(ValueError, match="transaction_sample_ratio must be between 0 and 1"):
         TracingMiddleware(transaction_sample_ratio=1.5)
+
+
+async def test_errors_name_the_single_exception_of_a_group() -> None:
+    """A task group in which one task failed raises a group of one. `error.type` names that exception, as rules see it."""
+    exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    reader = InMemoryMetricReader()
+    stack = [
+        TracingMiddleware(tracer_provider=tracer_provider),
+        MetricsMiddleware(meter_provider=MeterProvider(metric_readers=[reader])),
+    ]
+
+    async def handler(record: ConsumerRecord) -> Sequence[ProducerRecord]:
+        raise ExceptionGroup("tasks", [ExceptionGroup("nested", [TimeoutError("slow")])])
+
+    for middleware in stack:
+        async with middleware.lifespan(RUN):
+            with pytest.raises(ExceptionGroup):
+                await middleware.handle(Message(topic="orders", partition=0, offset=0), handler)
+    [span] = exporter.get_finished_spans()
+    assert (span.attributes["error.type"], span.status.description) == ("builtins.TimeoutError", "slow")
+    assert [event.attributes["exception.type"] for event in span.events] == ["ExceptionGroup"]
+    data = reader.get_metrics_data()
+    assert data is not None
+    errors = {
+        (point.attributes or {}).get("error.type")
+        for resource in data.resource_metrics
+        for scope in resource.scope_metrics
+        for metric in scope.metrics
+        if metric.name == "messaging.process.duration"
+        for point in metric.data.data_points
+    }
+    assert errors == {"builtins.TimeoutError"}

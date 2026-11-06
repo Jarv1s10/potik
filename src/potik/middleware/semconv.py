@@ -13,6 +13,7 @@ from opentelemetry.semconv._incubating.attributes.messaging_attributes import (
 from opentelemetry.util.types import AttributeValue
 
 from potik.core.types import Transaction
+from potik.middleware.exception import _single
 
 __all__: list[str] = []
 
@@ -30,7 +31,9 @@ _SEND = _operation("send", MessagingOperationTypeValues.SEND)
 _SETTLE = _operation("commit", MessagingOperationTypeValues.SETTLE)
 
 
-def _error_type(exc: BaseException) -> str:
+def _error_type(exc: Exception) -> str:
+    """Return `error.type`: the qualified class name of the single exception of a group of one, as rules see it (ADR 0015)."""
+    exc = _single(exc)
     return f"{type(exc).__module__}.{type(exc).__qualname__}"
 
 

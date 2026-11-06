@@ -38,6 +38,7 @@ from potik.core.types import (
     RecordSender,
     Transaction,
 )
+from potik.middleware.exception import _single
 from potik.middleware.semconv import _SEND, _SETTLE, _Attributes, _destination, _error_type, _operation
 
 __all__ = [
@@ -67,7 +68,7 @@ class TracingMiddleware(BaseMiddleware):
 
     Each span has the attributes that the OpenTelemetry messaging semantic conventions require for it, e.g. `messaging.consumer.group.name` on a run's spans. `optional_attributes` picks the optional ones. To add attributes of your own, or to rename a span, use `trace.get_current_span()` in a handler or in middleware after this one. The current span there is the `process` span, the transaction's span, or the `send` span.
 
-    Use one instance for each runtime and each producer. Put it first in the runtime's middleware, so that its spans cover the other middleware. `potik.build_runtime()` runs the exception rules inside its middleware, so one `process` span covers a record's retries and the outputs of exception rules, such as dead letters. In a core `Runtime`, put it before `ExceptionMiddleware` for the same span. A cancellation ends an existing span with a `cancelled` event instead of an error. It does not create a span for a transaction that sampling left out.
+    Use one instance for each runtime and each producer. Put it first in the runtime's middleware, so that its spans cover the other middleware. `potik.build_runtime()` runs the exception rules inside its middleware, so one `process` span covers a record's retries and the outputs of exception rules, such as dead letters. In a core `Runtime`, put it before `ExceptionMiddleware` for the same span. A failed span's `error.type` and status description name the single exception of an `ExceptionGroup` that holds only one, e.g. from a task group in the handler, as exception rules see it, and the span records the group as raised. A cancellation ends an existing span with a `cancelled` event instead of an error. It does not create a span for a transaction that sampling left out.
 
     A transaction's span is the root of its own trace, so the tracer provider's sampler decides on it apart from the records in it. To sample transactions, use `transaction_sample_ratio` with a sampler that keeps root spans.
 
@@ -266,8 +267,9 @@ def _creation_links(outputs: Sequence[ProducerRecord]) -> list[Link]:
 
 
 def _set_error(span: Span, exc: Exception) -> None:
+    """Record `exc` as raised, with every traceback, but describe the single exception of a group of one."""
     span.record_exception(exc)
-    span.set_status(StatusCode.ERROR, str(exc))
+    span.set_status(StatusCode.ERROR, str(_single(exc)))
     span.set_attribute(ERROR_TYPE, _error_type(exc))
 
 

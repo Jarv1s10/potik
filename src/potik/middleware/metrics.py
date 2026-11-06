@@ -58,7 +58,7 @@ class MetricsMiddleware(BaseMiddleware):
     """Measures handler calls, transactions, and `Producer` sends with the OpenTelemetry messaging metrics.
 
     - `messaging.client.consumed.messages` counts the records that the run passes to its handler, per topic. Its `messaging.operation.name` is `process`, the operation that delivers the records to the application.
-    - `messaging.process.duration` measures each handler call, per topic, with `error.type` if it raised.
+    - `messaging.process.duration` measures each handler call, per topic, with `error.type` if it raised. For an `ExceptionGroup` that holds a single exception, e.g. from a task group, `error.type` names that exception, as exception rules see it.
     - `messaging.client.operation.duration` measures each transaction, including its retries after a rebalance, with `error.type` if it failed. Its operation is `send`, or `commit` if it has no outputs.
     - `messaging.client.sent.messages` counts each transaction's outputs, per topic, with `error.type` if the transaction failed.
     - For each `Producer.send()`, `messaging.client.operation.duration` measures the whole call, including any wait for queue room, and `messaging.client.sent.messages` adds one, per topic.
