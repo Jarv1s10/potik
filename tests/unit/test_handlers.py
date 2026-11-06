@@ -1,7 +1,7 @@
 """Typed handlers through a built runtime's pipeline, covering what each parameter takes, what each return value produces, and middleware."""
 
 import copy
-from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -42,6 +42,7 @@ from potik.middleware import (
     skip,
 )
 from potik.serde import Decoder, Encoder, MsgspecJson, PydanticJson, Resolver, SerdeContext, Text
+from potik.testing import handle_record
 
 pytestmark = pytest.mark.anyio
 CONFIG = Config(bootstrap_servers="localhost:9092", group_id="unit")
@@ -73,29 +74,6 @@ def runtime_of(*routers: Router, **options) -> Runtime:
     return potik.build_runtime(CONFIG, routers, **options)
 
 
-def pipeline(runtime: Runtime) -> RecordHandler:
-    """Return the handler that `runtime` would call, from its private parts, without starting a run."""
-    return runtime._handler
-
-
-def consumed(record: ProducerRecord, offset: int = 0) -> ConsumerRecord:
-    """Return `record` as a run would consume it, at `offset` of its partition, or of partition 0 for any."""
-    headers = record.headers.items() if isinstance(record.headers, Mapping) else record.headers or ()
-    return Message(
-        topic=record.topic,
-        partition=max(record.partition, 0),
-        offset=offset,
-        key=record.key,
-        value=record.value,
-        headers=[(name, value.encode() if isinstance(value, str) else value) for name, value in headers] or None,
-    )
-
-
-async def handle_one(runtime: Runtime, record: ProducerRecord, *, offset: int = 0) -> list[ProducerRecord]:
-    """Handle `record` as a run of `runtime` would, without Kafka, and return its outputs."""
-    return list(await pipeline(runtime)(consumed(record, offset)))
-
-
 async def test_parameters_take_their_parts() -> None:
     router = Router()
     seen = {}
@@ -116,7 +94,7 @@ async def test_parameters_take_their_parts() -> None:
 
     headers = [("x-attempt", "1"), ("x-attempt", "2"), ("sent-at", "2026-10-20T12:00:00")]
     runtime = runtime_of(router, context={"db": 1})
-    assert await handle_one(runtime, orders(Order(sku="A"), key="c1", headers=headers), offset=7) == []
+    assert await handle_record(runtime, orders(Order(sku="A"), key="c1", headers=headers), offset=7) == []
     assert seen == {
         "order": Order(sku="A"),
         "offset": 7,
@@ -126,6 +104,24 @@ async def test_parameters_take_their_parts() -> None:
         "tenant": "none",
         "services": {"db": 1},
     }
+
+
+async def test_handle_record_consumes_a_producer_record_or_passes_a_consumer_record_through() -> None:
+    router = Router()
+    seen = []
+
+    @router.handler(orders)
+    async def handle(record: ConsumerRecord) -> None:
+        seen.append((record.partition(), record.offset(), record.timestamp()))
+
+    runtime = runtime_of(router)
+    await handle_record(runtime, orders(Order(sku="A"), key=None, partition=3, timestamp=1_700_000_000_000), offset=9)
+    await handle_record(runtime, Message(topic="orders", partition=1, offset=2, value=b'{"sku": "B"}'))
+    assert seen == [(3, 9, (1, 1_700_000_000_000)), (1, 2, (0, 0))]
+    with pytest.raises(TypeError, match="offset applies to a ProducerRecord"):
+        await handle_record(runtime, Message(topic="orders", value=b"{}"), offset=1)
+    with pytest.raises(ValueError, match="offset must be a non-negative integer"):
+        await handle_record(runtime, orders(Order(sku="A"), key=None), offset=-1)
 
 
 async def test_parameters_read_the_record_that_middleware_passes_on() -> None:
@@ -151,7 +147,7 @@ async def test_parameters_read_the_record_that_middleware_passes_on() -> None:
     async def handle(order: Order, customer: Annotated[str, Key()], record: ConsumerRecord) -> None:
         seen.update(order=order, customer=customer, value=record.value())
 
-    await handle_one(runtime_of(router, middleware=[Decrypting()]), orders(Order(sku="A"), key="c1"))
+    await handle_record(runtime_of(router, middleware=[Decrypting()]), orders(Order(sku="A"), key="c1"))
     assert seen == {"order": Order(sku="B"), "customer": "c2", "value": b'{"sku": "B"}'}
 
 
@@ -163,7 +159,7 @@ async def test_context_requires_a_context() -> None:
 
     with pytest.raises(RegistrationError, match=r"handle takes Context\(\), so requires build_runtime\(context=...\)"):
         runtime_of(router)
-    assert await handle_one(runtime_of(router, context=None), ProducerRecord("orders", value=b"x")) == []
+    assert await handle_record(runtime_of(router, context=None), ProducerRecord("orders", value=b"x")) == []
 
 
 async def test_text_takes_subclasses_and_new_types_as_their_base() -> None:
@@ -177,7 +173,9 @@ async def test_text_takes_subclasses_and_new_types_as_their_base() -> None:
         assert (status, priority) == (Status.PLACED, Priority.HIGH)
         return events(b"", key=priority)
 
-    [record] = await handle_one(runtime_of(router), ProducerRecord("statuses", b"placed", headers=[("priority", b"1")]))
+    [record] = await handle_record(
+        runtime_of(router), ProducerRecord("statuses", b"placed", headers=[("priority", b"1")])
+    )
     assert record.key == b"1"  # Its value, not the name that str() spells for an int mixin enum.
     assert Topic("customers", bytes, key_type=CustomerId)(b"", key=CustomerId("c1")).key == b"c1"
     with pytest.raises(EncodeError, match="takes Priority keys, got bool"):
@@ -223,7 +221,7 @@ async def test_the_topic_not_the_annotation_chooses_the_wire_format() -> None:
 
     runtime = runtime_of(router)
     for topic in ("plain", "quoted", "raw"):
-        await handle_one(runtime, ProducerRecord(topic, value=b"hi" if topic == "plain" else b'"hi"'))
+        await handle_record(runtime, ProducerRecord(topic, value=b"hi" if topic == "plain" else b'"hi"'))
     assert seen == ["hi", "hi", b'"hi"']
 
 
@@ -276,9 +274,9 @@ async def test_nullable_topics_take_their_declared_types() -> None:
         seen.append((value, key))
 
     runtime = runtime_of(router)
-    await handle_one(runtime, maybe("a", key=1))
-    await handle_one(runtime, ProducerRecord("maybe", b"null", b"null"))
-    await handle_one(runtime, maybe(None, key=None))
+    await handle_record(runtime, maybe("a", key=1))
+    await handle_record(runtime, ProducerRecord("maybe", b"null", b"null"))
+    await handle_record(runtime, maybe(None, key=None))
     assert seen == [("a", 1), (None, None), (None, None)]
     with pytest.raises(RegistrationError, match=r"topic 'maybe' has values of str \| None, not str"):
         Router().handler(maybe)(_taking(str))  # Whether it may skip nulls is not the topic's to decide.
@@ -302,7 +300,7 @@ async def test_explicit_outputs() -> None:
             ProducerRecord("raw", b"k", b"v"),
         ]
 
-    assert await handle_one(runtime_of(router), orders(Order(sku="A"), key="c1")) == [
+    assert await handle_record(runtime_of(router), orders(Order(sku="A"), key="c1")) == [
         ProducerRecord("accepted", b"c1", None),
         ProducerRecord("accepted", None, b'{"sku":"A"}', {"tenant": "t1"}),
         ProducerRecord("accepted", b"c2", b'{"sku":"A"}', partition=1),
@@ -328,7 +326,7 @@ async def test_outputs_fail_where_they_are_made() -> None:
         return {}
 
     with pytest.raises(PermanentError, match="the handler returned dict, not a list or tuple of ProducerRecord"):
-        await handle_one(runtime_of(router), orders(Order(sku="A"), key="c1"))
+        await handle_record(runtime_of(router), orders(Order(sku="A"), key="c1"))
 
 
 async def test_topics_encode_keys_as_their_key_type() -> None:
@@ -373,10 +371,10 @@ async def test_decode_errors_name_their_parameter() -> None:
 
     runtime = runtime_of(router)
     with pytest.raises(DecodeError, match="parameter 'order' cannot decode the value") as caught:
-        await handle_one(runtime, ProducerRecord("orders", value=b"not json", headers=[("x-attempt", b"1")]))
+        await handle_record(runtime, ProducerRecord("orders", value=b"not json", headers=[("x-attempt", b"1")]))
     assert caught.value.parameter == "order"
     with pytest.raises(DecodeError, match="parameter 'attempt' requires the header 'x-attempt'"):
-        await handle_one(runtime, orders(Order(sku="A"), key="c1"))
+        await handle_record(runtime, orders(Order(sku="A"), key="c1"))
 
 
 async def test_middleware_handles_records_as_in_a_run() -> None:
@@ -398,13 +396,13 @@ async def test_middleware_handles_records_as_in_a_run() -> None:
         router,
         exception_rules=[retry(max_attempts=3, backoff=lambda _: 0), on(Exception, dead_letter("orders.dlq"))],
     )
-    assert await handle_one(runtime, orders(Order(sku="flaky"), key="c1")) == []
+    assert await handle_record(runtime, orders(Order(sku="flaky"), key="c1")) == []
     assert attempts == ["flaky"] * 3
-    [unpayable] = await handle_one(runtime, orders(Order(sku="unpayable"), key="c2"))
+    [unpayable] = await handle_record(runtime, orders(Order(sku="unpayable"), key="c2"))
     assert unpayable[:3] == ("orders.dlq", b"c2", b'{"sku":"unpayable"}')
     assert dict(unpayable.headers or ())["potik.dlq.exception.type"].endswith(".UnpayableError")
     # The record's bytes, which do not decode.
-    [undecodable] = await handle_one(runtime, ProducerRecord("orders", b"c3", b"not json"))
+    [undecodable] = await handle_record(runtime, ProducerRecord("orders", b"c3", b"not json"))
     assert undecodable[:3] == ("orders.dlq", b"c3", b"not json")
     assert dict(undecodable.headers or ())["potik.dlq.exception.type"] == "potik.handler.DecodeError"
     assert attempts == ["flaky"] * 3 + ["unpayable"]
@@ -449,9 +447,9 @@ async def test_async_serdes_retry_failures_to_resolve_but_not_to_decode() -> Non
 
     rules = [retry(max_attempts=2, backoff=lambda _: 0), on(Exception, dead_letter("registered.dlq"))]
     runtime = runtime_of(router, exception_rules=rules)
-    assert await handle_one(runtime, registered(Order(sku="A"), key=7)) == []
+    assert await handle_record(runtime, registered(Order(sku="A"), key=7)) == []
     assert (seen, registry.outages) == ([(Order(sku="A"), 7)], 0)
-    [undecodable] = await handle_one(runtime, ProducerRecord("registered", b"7", b"not json"))
+    [undecodable] = await handle_record(runtime, ProducerRecord("registered", b"7", b"not json"))
     headers = dict(undecodable.headers or ())
     assert headers["potik.dlq.exception.type"] == "potik.handler.DecodeError"
     assert headers["potik.dlq.exception.message"].startswith("parameter 'order' cannot decode the value")
@@ -471,9 +469,9 @@ async def test_routers_combine_and_rules_may_apply_to_some_topics() -> None:
         raise KeyError
 
     runtime = runtime_of(tracked, untracked, exception_rules=[on(KeyError, skip(), topics=["tracked"])])
-    assert await handle_one(runtime, ProducerRecord("tracked")) == []
+    assert await handle_record(runtime, ProducerRecord("tracked")) == []
     with pytest.raises(KeyError):
-        await handle_one(runtime, ProducerRecord("untracked"))
+        await handle_record(runtime, ProducerRecord("untracked"))
     with pytest.raises(RegistrationError, match="topic 'tracked' is handled by both"):
         runtime_of(tracked, tracked)
     with pytest.raises(RegistrationError, match="at least one handler"):
@@ -539,11 +537,11 @@ async def test_dependencies_take_what_handlers_take_and_resolve_once_per_call() 
 
     runtime = runtime_of(router, context={"db": "pg"})
     record = orders(Order(sku="A"), key="c1", headers=[("x-tenant", "acme")])
-    [output] = await handle_one(runtime, record, offset=7)
+    [output] = await handle_record(runtime, record, offset=7)
     assert output.value == b'{"sku":"acme/c1:A (7, \'pg\') 8"}'
     assert calls == ["tenant", "customer", "sku", "scope", "counter", "handle"]
     calls.clear()
-    await handle_one(runtime, record, offset=8)
+    await handle_record(runtime, record, offset=8)
     assert calls == ["tenant", "customer", "sku", "scope", "counter", "handle"]  # Anew for each call.
 
 
@@ -584,7 +582,7 @@ async def test_dependencies_that_yield_resume_last_first_and_see_the_failure() -
 
     runtime = runtime_of(router)
     with pytest.raises(ConnectionError, match="rollback failed") as caught:
-        await handle_one(runtime, ProducerRecord("orders", value=b"fail"))
+        await handle_record(runtime, ProducerRecord("orders", value=b"fail"))
     assert repr(caught.value.__context__) == "KeyError('handler')"
     assert seen == [
         ("failing", None),
@@ -593,7 +591,7 @@ async def test_dependencies_that_yield_resume_last_first_and_see_the_failure() -
     ]
     seen.clear()
     with pytest.raises(ConnectionError):  # The handler returned, but a dependency failed after it.
-        await handle_one(runtime, ProducerRecord("orders", value=b"ok"))
+        await handle_record(runtime, ProducerRecord("orders", value=b"ok"))
     assert seen == [
         ("failing", None),
         ("swallowing", "ConnectionError('rollback failed')"),
@@ -613,7 +611,7 @@ async def test_a_dependency_cannot_suppress_the_handlers_exception() -> None:
         raise KeyError("handler")
 
     with pytest.raises(KeyError, match="handler"):
-        await handle_one(runtime_of(router), ProducerRecord("orders", value=b""))
+        await handle_record(runtime_of(router), ProducerRecord("orders", value=b""))
 
 
 async def test_a_failed_resolution_resumes_the_dependencies_entered_before_it() -> None:
@@ -640,10 +638,10 @@ async def test_a_failed_resolution_resumes_the_dependencies_entered_before_it() 
 
     runtime = runtime_of(router)
     with pytest.raises(TimeoutError):
-        await handle_one(runtime, orders(Order(sku="A"), key=None))
+        await handle_record(runtime, orders(Order(sku="A"), key=None))
     assert seen == ["TimeoutError('lookup')"]
     with pytest.raises(DecodeError, match="parameter 'order'"):  # The value comes first, so nothing was entered.
-        await handle_one(runtime, ProducerRecord("orders", value=b"not json"))
+        await handle_record(runtime, ProducerRecord("orders", value=b"not json"))
     assert seen == ["TimeoutError('lookup')"]
 
 
@@ -670,7 +668,7 @@ async def test_dependency_failures_meet_exception_rules_and_retries_resolve_agai
         return accepted(Accepted(sku=order.sku), key=None)
 
     rules = [on(TimeoutError, retry(max_attempts=3, backoff=lambda _: 0))]
-    [output] = await handle_one(runtime_of(router, exception_rules=rules), orders(Order(sku="A"), key=None))
+    [output] = await handle_record(runtime_of(router, exception_rules=rules), orders(Order(sku="A"), key=None))
     assert output.topic == "accepted"
     assert events == ["enter", "handle 1", "exit", "enter", "handle 2", "exit", "enter", "handle 3", "exit"]
 
@@ -708,7 +706,7 @@ async def test_dependencies_resume_in_a_cancelled_scope() -> None:
 
     runtime = runtime_of(router)
     async with anyio.create_task_group() as tasks:
-        tasks.start_soon(handle_one, runtime, ProducerRecord("orders", value=b""))
+        tasks.start_soon(handle_record, runtime, ProducerRecord("orders", value=b""))
         await started.wait()
         tasks.cancel_scope.cancel()
     assert seen == ["cancelled", "shielded"]
@@ -733,7 +731,7 @@ async def test_middleware_hands_values_to_dependencies_in_context_variables() ->
     async def handle(value: bytes, tenant: Annotated[str, Depends(current_tenant)]) -> ProducerRecord:
         return ProducerRecord("tenants", value=tenant.encode())
 
-    [output] = await handle_one(runtime_of(router, middleware=[Tenant()]), ProducerRecord("orders", value=b""))
+    [output] = await handle_record(runtime_of(router, middleware=[Tenant()]), ProducerRecord("orders", value=b""))
     assert output.value == b"acme"
 
 
@@ -755,12 +753,12 @@ async def test_a_dependency_may_set_a_deadline_for_the_call() -> None:
         return ProducerRecord("done", value=value)
 
     runtime = runtime_of(router)
-    assert await handle_one(runtime, ProducerRecord("orders", value=b"slow")) == []  # Moved on, with no outputs.
+    assert await handle_record(runtime, ProducerRecord("orders", value=b"slow")) == []  # Moved on, with no outputs.
     await anyio.lowlevel.checkpoint()  # No cancellation is left behind.
-    [output] = await handle_one(runtime, ProducerRecord("orders", value=b"fast"))
+    [output] = await handle_record(runtime, ProducerRecord("orders", value=b"fast"))
     assert output.value == b"fast"
     with pytest.raises(TimeoutError):
-        await handle_one(runtime, ProducerRecord("orders", value=b"slow", headers=[("x-fail", b"1")]))
+        await handle_record(runtime, ProducerRecord("orders", value=b"slow", headers=[("x-fail", b"1")]))
 
 
 async def test_a_deadline_ends_the_call_without_hiding_its_failure() -> None:
@@ -790,10 +788,10 @@ async def test_a_deadline_ends_the_call_without_hiding_its_failure() -> None:
         return ProducerRecord("done", value=value)
 
     runtime = runtime_of(router)
-    assert await handle_one(runtime, ProducerRecord("orders", value=b"ok")) == []
+    assert await handle_record(runtime, ProducerRecord("orders", value=b"ok")) == []
     assert events == []
     with pytest.raises(ValueError, match="bad order"):
-        await handle_one(runtime, ProducerRecord("orders", value=b"bad"))
+        await handle_record(runtime, ProducerRecord("orders", value=b"bad"))
 
 
 async def test_a_dependency_cannot_swallow_an_outer_cancellation() -> None:
@@ -815,7 +813,7 @@ async def test_a_dependency_cannot_swallow_an_outer_cancellation() -> None:
 
     async def call() -> None:
         try:
-            seen.append(await handle_one(runtime_of(router), ProducerRecord("orders", value=b"")))
+            seen.append(await handle_record(runtime_of(router), ProducerRecord("orders", value=b"")))
         except anyio.get_cancelled_exc_class():
             seen.append("cancelled")
             raise
@@ -847,7 +845,7 @@ async def test_failed_exits_keep_their_chain() -> None:
         raise KeyError("handler")
 
     with pytest.raises(RuntimeError, match="outer") as caught:
-        await handle_one(runtime_of(router), ProducerRecord("orders", value=b""))
+        await handle_record(runtime_of(router), ProducerRecord("orders", value=b""))
     assert repr(caught.value.__context__) == "ConnectionError('inner')"
     assert repr(caught.value.__context__.__context__) == "KeyError('handler')"
 
@@ -923,12 +921,12 @@ async def test_a_call_decodes_each_part_once_for_all_its_parameters(
 
     runtime = runtime_of(router)
     record = counted(Order(sku="A"), key=None, headers=[("x-tenant", "acme")])
-    await handle_one(runtime, record)
-    await handle_one(runtime, record)
+    await handle_record(runtime, record)
+    await handle_record(runtime, record)
     assert seen == [(Order(sku="A"), "acme:A", True, "acme", "acme")] * 2
     assert (counting.decodes, len(tenants)) == (2, 2)  # Once per call.
     seen.clear()
-    await handle_one(runtime, ProducerRecord("counted"))  # A tombstone, without the header.
+    await handle_record(runtime, ProducerRecord("counted"))  # A tombstone, without the header.
     assert seen == [(None, "none", True, "none", "none")]
 
 
@@ -942,7 +940,7 @@ async def test_a_part_that_fails_to_decode_names_the_parameter_that_decoded_it_f
     async def handle(sku: Annotated[str, Depends(sku)], order: Order) -> None: ...
 
     with pytest.raises(DecodeError, match="parameter 'placed' cannot decode the value") as caught:
-        await handle_one(runtime_of(router), ProducerRecord("orders", value=b"not json"))
+        await handle_record(runtime_of(router), ProducerRecord("orders", value=b"not json"))
     assert caught.value.parameter == "placed"
 
 
@@ -964,7 +962,7 @@ async def test_callable_objects_are_dependencies() -> None:
     ) -> ProducerRecord:
         return ProducerRecord("pools", value=f"{pool} {record}".encode())
 
-    [output] = await handle_one(runtime_of(router), ProducerRecord("orders", value=b""))
+    [output] = await handle_record(runtime_of(router), ProducerRecord("orders", value=b""))
     assert output.value == b"3 a marker wins over the type"
 
 
@@ -1081,10 +1079,10 @@ async def test_msgspec_decodes_and_encodes() -> None:
         return doubled([value * 2 for value in values], key=None)
 
     runtime = runtime_of(router)
-    [record] = await handle_one(runtime, numbers([1, 2], key=None))
+    [record] = await handle_record(runtime, numbers([1, 2], key=None))
     assert record.value == b"[2,4]"
     with pytest.raises(DecodeError):
-        await handle_one(runtime, ProducerRecord("numbers", value=b'["x"]'))
+        await handle_record(runtime, ProducerRecord("numbers", value=b'["x"]'))
 
 
 async def test_topics_are_immutable_and_decode_their_keys_and_values() -> None:
@@ -1107,7 +1105,7 @@ async def test_declared_outputs_do_not_restrict_what_handlers_return() -> None:
 
     assert router.registrations["orders"].output_topics == ("accepted", "orders.raw")
     assert router.output_topics == ("orders.audit",)
-    assert await handle_one(runtime_of(router), orders(Order(sku="A"), key="c1")) == [
+    assert await handle_record(runtime_of(router), orders(Order(sku="A"), key="c1")) == [
         ProducerRecord("undeclared", None, b"v")
     ]
     with pytest.raises(RegistrationError, match="invalid Kafka topic name"):
@@ -1123,9 +1121,11 @@ async def test_dead_letters_copy_the_record_and_say_why_it_failed() -> None:
     async def handle(record: ConsumerRecord) -> None:
         raise TimeoutError("gateway timed out")
 
-    outputs = await handle_one(
+    outputs = await handle_record(
         runtime_of(router, exception_rules=[on(TimeoutError, dead_letter("payments.dlq"))]),
-        ProducerRecord("payments", b"k", b"v", [("traceparent", "00-1-2-01")], partition=2),
+        ProducerRecord(
+            "payments", b"k", b"v", [("traceparent", "00-1-2-01")], partition=2, timestamp=1_700_000_000_000
+        ),
         offset=7,
     )
     assert outputs == [
@@ -1138,6 +1138,7 @@ async def test_dead_letters_copy_the_record_and_say_why_it_failed() -> None:
                 ("potik.dlq.source.topic", "payments"),
                 ("potik.dlq.source.partition", "2"),
                 ("potik.dlq.source.offset", "7"),
+                ("potik.dlq.source.timestamp", "1700000000000"),
                 ("potik.dlq.exception.type", "builtins.TimeoutError"),
                 ("potik.dlq.exception.message", "gateway timed out"),
                 ("potik.dlq.attempts", "1"),
@@ -1154,7 +1155,7 @@ async def test_a_dead_letter_cuts_a_long_exception_message() -> None:
     async def handle(record: ConsumerRecord) -> None:
         raise ValueError("x" * 1_000_000)
 
-    (output,) = await handle_one(
+    (output,) = await handle_record(
         runtime_of(router, exception_rules=[on(ValueError, dead_letter("payments.dlq"))]),
         ProducerRecord("payments", b"k", b"v"),
     )
@@ -1180,7 +1181,7 @@ async def test_exception_rules_run_inside_the_middleware() -> None:
         raise TimeoutError
 
     runtime = runtime_of(router, middleware=[Recorder()], exception_rules=[dead_letter("payments.dlq")])
-    await handle_one(runtime, ProducerRecord("payments"))
+    await handle_record(runtime, ProducerRecord("payments"))
     assert seen == [["payments.dlq"]]
     with pytest.raises(RegistrationError, match=r"runtime\(exception_rules=...\)"):
         runtime_of(router, middleware=[ExceptionMiddleware(skip())])
