@@ -6,6 +6,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 
 - A dead letter of a record that already holds `potik.dlq.*` headers, e.g. one that a retry topic sent back, replaces them, and any received header with the name of a header that the `headers` function adds. It kept both before, so a reader that takes a header's first value saw the oldest failure.
 - `TracingMiddleware` and `MetricsMiddleware` set `error.type`, and a span's status description, from the single exception of an `ExceptionGroup` that holds only one, e.g. from a task group in which one task failed, as exception rules see it. They named `builtins.ExceptionGroup` before. A span still records the group as raised.
+- An exception from `TracingMiddleware`'s `key_text` leaves the key out of the span, and the middleware logs the first one, instead of failing the record, its outputs, or the `Producer.send()`. The record's failure bypassed the exception rules, so it stopped the partition.
 
 ## 0.2.1 (2026-11-06)
 

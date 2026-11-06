@@ -325,3 +325,16 @@ async def test_errors_name_the_single_exception_of_a_group() -> None:
         for point in metric.data.data_points
     }
     assert errors == {"builtins.TimeoutError"}
+
+
+async def test_a_failing_key_text_leaves_the_key_out_and_logs_once(caplog: pytest.LogCaptureFixture) -> None:
+    """Instrumentation must not fail a record, its outputs, or a send."""
+
+    def key_text(key: bytes) -> str:
+        raise ValueError("bug")
+
+    spans = await traced(optional_attributes={KEY}, key_text=key_text)
+    assert not any(KEY in (span.attributes or {}) for named in spans.values() for span in named)
+    [log] = [record for record in caplog.records if record.name == "potik.middleware.tracing"]
+    assert log.exc_info is not None
+    assert isinstance(log.exc_info[1], ValueError)
