@@ -7,7 +7,7 @@ import anyio
 import pytest
 
 import potik
-from potik import Config, Context, Key, Producer, Router, Runtime, Topic
+from potik import Config, ConsumerRecord, Context, Key, Producer, Router, Runtime, Topic
 from potik.middleware import TopicCheckError, dead_letter, on
 from potik.testing import MockCluster
 
@@ -21,12 +21,18 @@ rejected = Topic("rejected", str)
 router = Router()
 
 
+# An event time in the past, which neither the producer nor the broker would pick.
+EVENT_TIME = 1_700_000_000_000
+
+
 @router.handler(orders, output_topics=[accepted])
-async def accept(order: str, customer: Annotated[str, Key()], producer: Annotated[Producer, Context()]):
+async def accept(
+    order: str, customer: Annotated[str, Key()], record: ConsumerRecord, producer: Annotated[Producer, Context()]
+):
     if order == "bad":
         raise ValueError("bad order")
     await producer.send(audit(order, key=customer))
-    return accepted(order.upper(), key=customer)
+    return accepted(order.upper(), key=customer, timestamp=record.timestamp()[1])
 
 
 def shop(config: Config, producer: Producer) -> Runtime:
@@ -49,7 +55,7 @@ async def test_an_app_runs_end_to_end() -> None:
             cluster.create_topic(topic, partitions=2)
         async with Producer(cluster.bootstrap_servers) as producer:
             for order in ("a", "bad", "b"):
-                await producer.send(orders(order, key=f"c-{order}"))
+                await producer.send(orders(order, key=f"c-{order}", timestamp=EVENT_TIME))
         async with anyio.create_task_group() as tasks:
             await tasks.start(serve, cluster)
             outputs = await cluster.wait_records(accepted, 2)
@@ -58,6 +64,10 @@ async def test_an_app_runs_end_to_end() -> None:
         sends = await cluster.wait_records(audit, 2)
     assert sorted((record.key(), record.value()) for record in outputs) == [(b"c-a", b"A"), (b"c-b", b"B")]
     assert [record.value() for record in dead_letters] == [b"bad"]
+    assert {record.timestamp()[1] for record in outputs} == {EVENT_TIME}
+    [dead_letter_record] = dead_letters
+    assert dict(dead_letter_record.headers() or [])["potik.dlq.source.timestamp"] == str(EVENT_TIME).encode()
+    assert dead_letter_record.timestamp()[1] > EVENT_TIME
     assert sorted(record.value() for record in sends) == [b"a", b"b"]
 
 

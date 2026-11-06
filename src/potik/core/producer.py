@@ -195,7 +195,7 @@ class Producer:
     async def _deliver(self, record: ProducerRecord) -> Delivery:
         if (client := self._client) is None:
             raise RuntimeError("the producer is closed")
-        topic, key, value, headers, partition = record
+        topic, key, value, headers, partition, timestamp = record
         pending = _Pending()
         while True:
             if self._failure is not None:
@@ -204,7 +204,13 @@ class Producer:
                 raise RuntimeError("the producer closed before sending the record")
             try:
                 client.produce(
-                    topic, value, key, partition, on_delivery=partial(self._report, pending), headers=headers
+                    topic,
+                    value,
+                    key,
+                    partition,
+                    on_delivery=partial(self._report, pending),
+                    timestamp=timestamp or 0,  # librdkafka reads 0 as the current time.
+                    headers=headers,
                 )
                 break
             except BufferError:

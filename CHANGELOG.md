@@ -4,6 +4,8 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 
 ## Unreleased
 
+- `ProducerRecord` takes a `timestamp`, in milliseconds since the Unix epoch, and so does calling a `Topic`, e.g. to keep an input's event time on its outputs. The default, None, is still the time the producer sends the record. It is the record's last field, so code that unpacks a `ProducerRecord` into its fields needs one more name.
+- `dead_letter_headers` adds `potik.dlq.source.timestamp`, the failed record's timestamp. The dead letter's own timestamp stays the time it is written.
 - A dead letter of a record that already holds `potik.dlq.*` headers, e.g. one that a retry topic sent back, replaces them, and any received header with the name of a header that the `headers` function adds. It kept both before, so a reader that takes a header's first value saw the oldest failure.
 - `TracingMiddleware` and `MetricsMiddleware` set `error.type`, and a span's status description, from the single exception of an `ExceptionGroup` that holds only one, e.g. from a task group in which one task failed, as exception rules see it. They named `builtins.ExceptionGroup` before. A span still records the group as raised.
 - An exception from `TracingMiddleware`'s `key_text` leaves the key out of the span, and the middleware logs the first one, instead of failing the record, its outputs, or the `Producer.send()`. The record's failure bypassed the exception rules, so it stopped the partition.

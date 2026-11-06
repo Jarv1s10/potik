@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import anyio
+from confluent_kafka import TIMESTAMP_NOT_AVAILABLE
 
 from potik.core.errors import PermanentError
 from potik.core.middleware import BaseMiddleware
@@ -317,6 +318,7 @@ def dead_letter_headers(context: ExceptionContext[Exception]) -> list[tuple[str,
     """Return the headers that `dead_letter()` adds by default.
 
     - `potik.dlq.source.topic`, `potik.dlq.source.partition`, and `potik.dlq.source.offset`: where the record came from.
+    - `potik.dlq.source.timestamp`: the record's timestamp, in milliseconds since the Unix epoch, if it has one. The dead letter's own timestamp is the time it is written, so that the dead letter topic's retention counts from then.
     - `potik.dlq.exception.type`: the exception's qualified class name.
     - `potik.dlq.exception.message`: `str()` of the exception, which may contain data from the record. A message longer than 1000 characters is cut, and ends with `...`.
     - `potik.dlq.attempts`: the number of handler calls.
@@ -328,10 +330,12 @@ def dead_letter_headers(context: ExceptionContext[Exception]) -> list[tuple[str,
     message = str(exception)
     if len(message) > _MAX_MESSAGE:
         message = f"{message[: _MAX_MESSAGE - 3]}..."
+    timestamp_type, timestamp = record.timestamp()
     return [
         ("potik.dlq.source.topic", record.topic()),
         ("potik.dlq.source.partition", str(record.partition())),
         ("potik.dlq.source.offset", str(record.offset())),
+        *([] if timestamp_type == TIMESTAMP_NOT_AVAILABLE else [("potik.dlq.source.timestamp", str(timestamp))]),
         ("potik.dlq.exception.type", f"{type(exception).__module__}.{type(exception).__qualname__}"),
         ("potik.dlq.exception.message", message),
         ("potik.dlq.attempts", str(context.attempt)),
