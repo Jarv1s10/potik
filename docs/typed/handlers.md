@@ -108,6 +108,14 @@ async def split(order: Order, customer: Annotated[str, Key()]) -> list[ProducerR
 
 Every call names its key. Pass `key=None` for a null key, and `None` as the value for a tombstone. To keep a customer's records in one partition downstream, take the input key with `Key()` and pass it on.
 
+An output's timestamp is the time it's produced, unless you pass `timestamp=` in milliseconds since the Unix epoch. To keep an event's time downstream, take the input record and pass on its timestamp:
+
+```python
+@router.handler(orders)
+async def accept(order: Order, customer: Annotated[str, Key()], record: ConsumerRecord) -> ProducerRecord:
+    return accepted(Accepted.of(order), key=customer, timestamp=record.timestamp()[1])
+```
+
 `output_topics=` lists the topics that a handler writes to. The app then checks that these topics exist before it starts, and type checkers check the handler's return type against them:
 
 ```python

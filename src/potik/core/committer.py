@@ -179,13 +179,14 @@ class Committer:
         self._in_transaction = True
         try:
             produce = producer.produce
-            for topic, key, value, headers, partition in outputs:
+            for topic, key, value, headers, partition, timestamp in outputs:
+                # librdkafka reads a 0 timestamp as the current time.
                 try:
-                    produce(topic, value, key, partition, headers=headers)
+                    produce(topic, value, key, partition, timestamp=timestamp or 0, headers=headers)
                 except BufferError:
                     # The client queue is full. Deliver the queued outputs first. It returns within message.timeout.ms, which librdkafka keeps at or below transaction.timeout.ms.
                     producer.flush()
-                    produce(topic, value, key, partition, headers=headers)
+                    produce(topic, value, key, partition, timestamp=timestamp or 0, headers=headers)
             # Without a timeout, it waits for the rest of the transaction timeout. librdkafka 2.16.0 can still wait until a broker is up again, whatever the timeout, if its offset commit loses its connection (DESIGN.md, Bounded transactions).
             producer.send_offsets_to_transaction(offsets, metadata)
         except BaseException:

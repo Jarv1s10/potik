@@ -317,6 +317,9 @@ async def test_outputs_fail_where_they_are_made() -> None:
     assert caught.value.topic == "accepted"
     with pytest.raises(ValueError, match="partition"):
         accepted(Accepted(sku="A"), key=None, partition=-2)
+    for timestamp in (0, -1, True, 1.5):
+        with pytest.raises(ValueError, match="timestamp"):
+            accepted(Accepted(sku="A"), key=None, timestamp=timestamp)  # ty: ignore[invalid-argument-type]
 
     router = Router()
 

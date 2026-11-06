@@ -47,7 +47,7 @@ The rules run inside the runtime's `middleware`. So tracing and metrics see one 
 
 ## Dead letters
 
-A dead letter keeps the failed record's key, value, and headers as raw bytes, even when they don't decode. potik adds `potik.dlq.*` headers with the source topic, partition, and offset, the exception's class and message, and the number of attempts. A dead letter that fails again gets new `potik.dlq.*` headers in place of the earlier ones. The exception message may contain data from the record, and potik cuts it to 1000 characters.
+A dead letter keeps the failed record's key, value, and headers as raw bytes, even when they don't decode. potik adds `potik.dlq.*` headers with the source topic, partition, offset, and timestamp, the exception's class and message, and the number of attempts. A dead letter that fails again gets new `potik.dlq.*` headers in place of the earlier ones. The exception message may contain data from the record, and potik cuts it to 1000 characters.
 
 To set other headers, pass a function that returns them:
 

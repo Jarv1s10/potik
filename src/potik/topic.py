@@ -150,7 +150,13 @@ class Topic(Generic[_V, _K]):
         return self
 
     def __call__(
-        self, value: _V | None, *, key: _K | None, headers: Headers | None = None, partition: int = -1
+        self,
+        value: _V | None,
+        *,
+        key: _K | None,
+        headers: Headers | None = None,
+        partition: int = -1,
+        timestamp: int | None = None,
     ) -> ProducerRecord[_V]:
         """Encode `value` and `key` into a `ProducerRecord` to this topic.
 
@@ -159,21 +165,25 @@ class Topic(Generic[_V, _K]):
             key: The key, or None for a null key. It has no default, so every call decides the key.
             headers: The record's headers, which the topic does not encode.
             partition: The record's partition, or -1 to let the producer's partitioner pick one.
+            timestamp: The record's timestamp, e.g. its event time, in milliseconds since the Unix epoch, or None for the time the producer sends it (see `ProducerRecord`).
 
         Returns:
             The record, with the encoded key and value.
 
         Raises:
             EncodeError: If the topic does not take the value or key, or its serde fails on them.
-            ValueError: If `partition` is neither -1 nor a partition number.
+            ValueError: If `partition` is neither -1 nor a partition number, or `timestamp` is neither None nor a positive integer.
         """
         if type(partition) is not int or partition < -1:
             raise ValueError(
                 f"partition must be -1, to let the partitioner pick, or a partition number, got {partition!r}"
             )
+        # librdkafka would read 0 as the current time.
+        if timestamp is not None and (type(timestamp) is not int or timestamp < 1):
+            raise ValueError(f"timestamp must be None or milliseconds since the Unix epoch, got {timestamp!r}")
         encoded_key = None if key is None else self._encode_part(key, self.key_type, self._key, "key")
         data = None if value is None else self._encode_part(value, self.value_type, self._value, "value")
-        return ProducerRecord(self.name, encoded_key, data, headers, partition)
+        return ProducerRecord(self.name, encoded_key, data, headers, partition, timestamp)
 
     async def decode(self, data: bytes) -> _V:
         """Decode a value of this topic, e.g. in middleware.
