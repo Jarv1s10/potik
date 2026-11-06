@@ -3,6 +3,7 @@
 Needs the `otel` extra.
 """
 
+import logging
 import random
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping, Sequence
@@ -45,6 +46,8 @@ __all__ = [
     "TracingMiddleware",
 ]
 
+_logger = logging.getLogger(__name__)
+
 _PROCESS = _operation("process", MessagingOperationTypeValues.PROCESS)
 _CREATE = _operation("create", MessagingOperationTypeValues.CREATE)
 
@@ -74,7 +77,7 @@ class TracingMiddleware(BaseMiddleware):
 
     Args:
         optional_attributes: The optional attributes to add, where they apply. The default, `TracingMiddleware.DEFAULT_OPTIONAL_ATTRIBUTES`, is `messaging.destination.partition.id`, `messaging.kafka.offset`, and `messaging.client.id` if the client's `client.id` is set. `messaging.kafka.message.key` is off by default, because keys often identify people, and so is `messaging.message.body.size`, which the conventions make opt-in.
-        key_text: Returns the text of a key for `messaging.kafka.message.key`, or None to leave the key out. The default decodes UTF-8 and leaves out keys that are not valid UTF-8.
+        key_text: Returns the text of a key for `messaging.kafka.message.key`, or None to leave the key out. The default decodes UTF-8 and leaves out keys that are not valid UTF-8. If it raises, the span leaves the key out, and the middleware logs the first such error of its instance, so a bug in it never fails a record or a send.
         transaction_sample_ratio: The share of transactions that get a span, from 0 to 1. A failed transaction always gets one, but if it was not picked, its span is not the current span while the transaction runs. The tracer provider's sampler still decides whether to keep each span.
         tracer_provider: Defaults to the global tracer provider.
 
@@ -102,6 +105,7 @@ class TracingMiddleware(BaseMiddleware):
         self._tracer = trace.get_tracer("potik", tracer_provider=tracer_provider)
         self._attributes = frozenset(optional_attributes)
         self._key_text = key_text
+        self._key_text_failed = False  # Only its first error is logged.
         self._transaction_sample_ratio = transaction_sample_ratio
         # Set by the lifespan: the run's consumer group, and each client's id.
         self._group: _Attributes = {}
@@ -248,9 +252,19 @@ class TracingMiddleware(BaseMiddleware):
         if MESSAGING_MESSAGE_BODY_SIZE in self._attributes:
             attributes[MESSAGING_MESSAGE_BODY_SIZE] = len(value or b"")
         selected = MESSAGING_KAFKA_MESSAGE_KEY in self._attributes
-        if selected and key is not None and (text := self._key_text(key)) is not None:
+        if selected and key is not None and (text := self._text_of(key)) is not None:
             attributes[MESSAGING_KAFKA_MESSAGE_KEY] = text
         return attributes
+
+    def _text_of(self, key: bytes) -> str | None:
+        """Return `key_text(key)`, or None if it raises: instrumentation must not change what the app does."""
+        try:
+            return self._key_text(key)
+        except Exception:
+            if not self._key_text_failed:
+                self._key_text_failed = True
+                _logger.exception("key_text raised, so spans leave out the keys it fails on. Later errors go unlogged")
+            return None
 
 
 _OPTIONAL = TracingMiddleware.DEFAULT_OPTIONAL_ATTRIBUTES | {MESSAGING_KAFKA_MESSAGE_KEY, MESSAGING_MESSAGE_BODY_SIZE}
