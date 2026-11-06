@@ -1,6 +1,6 @@
 # Testing
 
-potik supports two kinds of tests. A unit test calls a handler directly. An app test runs the whole runtime against a `MockCluster`.
+potik supports three kinds of tests. A unit test calls a handler directly. A pipeline test runs one record through your runtime's middleware, exception rules, and handler, without Kafka. An app test runs the whole runtime against a `MockCluster`.
 
 ## Calling a handler
 
@@ -14,6 +14,23 @@ async def test_accept():
 ```
 
 A plain call skips the middleware, the exception rules, and the commit.
+
+## Handling one record
+
+`potik.testing.handle_record()` runs one record through a runtime as a run would handle it, and returns its outputs. Build the runtime with your service's own build function, so the test covers its middleware, exception rules, and context. The record's parameters decode as in production, and a failure reaches your exception rules:
+
+```python
+from potik.testing import handle_record
+
+
+@pytest.mark.anyio
+async def test_a_bad_order_goes_to_the_dead_letter_topic():
+    runtime = build(CONFIG, FakeDb())
+    (dead_letter,) = await handle_record(runtime, orders(Order(sku="", amount=10), key="c1"))
+    assert dead_letter.topic == "orders.dlq"
+```
+
+An exception that no rule handles propagates, as it would stop the partition. Nothing connects to Kafka, so no middleware lifespan runs, and there's no commit. Retry delays still wait, so give `retry()` a zero backoff in tests.
 
 ## Running the app
 

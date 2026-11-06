@@ -12,6 +12,7 @@ import potik
 from potik import Config, Delivery, Depends, Producer, ProducerRecord, Router, Runtime, Topic
 from potik.middleware import ExceptionContext, TopicCheckMiddleware, dead_letter, on, skip
 from potik.serde import PydanticJson
+from potik.testing import handle_record
 
 
 class Order(BaseModel):
@@ -143,3 +144,10 @@ config = Config(bootstrap_servers="localhost:9092", group_id="typing")
 assert_type(
     potik.build_runtime(config, [router], context=object(), middleware=[TopicCheckMiddleware(["raw"])]), Runtime
 )
+
+
+async def handles_one_record(runtime: Runtime) -> None:
+    """A test runs one record, made by calling a topic, through a runtime, and gets its outputs."""
+    record = orders(Order(sku="A"), key="c1", timestamp=1_700_000_000_000)
+    assert_type(await handle_record(runtime, record, offset=3), list[ProducerRecord])
+    orders(Order(sku="A"), key="c1", timestamp="now")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # pyrefly: ignore[bad-argument-type]

@@ -1,8 +1,9 @@
-"""Run a whole app in tests, on an in-process Kafka cluster instead of a broker."""
+"""Test an app without a broker: one record through its handler pipeline, or the whole app on an in-process Kafka cluster."""
 
 import ctypes
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import replace
 from functools import cache
 from types import TracebackType
@@ -12,19 +13,81 @@ from uuid import uuid4
 import anyio
 import anyio.from_thread
 import confluent_kafka.cimpl
-from confluent_kafka import OFFSET_BEGINNING, Consumer, KafkaError, KafkaException, TopicPartition
+from confluent_kafka import (
+    OFFSET_BEGINNING,
+    TIMESTAMP_CREATE_TIME,
+    Consumer,
+    KafkaError,
+    KafkaException,
+    Message,
+    TopicPartition,
+)
 
-from potik.core import Config, ConsumerRecord, resume_or_earliest
+from potik.core import Config, ConsumerRecord, ProducerRecord, Runtime, resume_or_earliest
 from potik.middleware.topics import NamedTopic, _topic_names
 
 __all__ = [
     "MockCluster",
+    "handle_record",
 ]
 
 # How long a read blocks before it checks its deadline and cancellation.
 _READ_SLICE = 0.1
 # The mock cluster holds a fetch without records for the whole wait, even when a record arrives sooner.
 _FETCH_WAIT_MS = 10
+
+
+async def handle_record(
+    runtime: Runtime, record: ProducerRecord | ConsumerRecord, *, offset: int | None = None
+) -> list[ProducerRecord]:
+    """Handle `record` as a run of `runtime` would, without Kafka, and return its outputs.
+
+    The record passes through the runtime's `handle` stage: its middleware, its exception rules, its concurrency limits, its handler, and the check of the handler's outputs. Build the runtime with your service's own build function, so the test covers its middleware, rules, and context. Its `Config` connects nowhere, so any `bootstrap_servers` will do.
+
+    It runs no lifespans, so a middleware's `lifespan()`, e.g. the topic check's, never runs, and a middleware whose `handle()` needs its lifespan does not work. There are no transactions, no key ordering, and no stopped partitions. Test those with `MockCluster`. A rule's retry delays still wait, so give `retry()` a zero backoff in tests.
+
+    Args:
+        runtime: The runtime whose `handle` stage to run. It need not run, and handling a record does not start it.
+        record: The record, e.g. `orders(Order(sku="A"), key="c1")`, or a `ConsumerRecord` that passes through as it is. A `ProducerRecord` is consumed from its partition, or partition 0 if it has none, with its timestamp, or the current time if it has none. Its `str` header values become bytes, as Kafka delivers them.
+        offset: The offset of a `ProducerRecord`'s consumed copy. Defaults to 0.
+
+    Returns:
+        The outputs that would commit with the record's offset, e.g. a dead letter.
+
+    Raises:
+        Exception: The exception that no rule handles, which would stop the record's partition.
+        TypeError: If `offset` is given with a `ConsumerRecord`.
+        ValueError: If `offset` is negative.
+
+    Example:
+        ```python
+        async def test_accept() -> None:
+            runtime = build(CONFIG, FakeDb())  # your service's potik.build_runtime(...)
+            outputs = await handle_record(runtime, orders(Order(sku="A"), key="c1"))
+            assert outputs == [accepted(Accepted(sku="A"), key="c1")]
+        ```
+    """
+    if isinstance(record, ProducerRecord):
+        record = _consumed(record, 0 if offset is None else offset)
+    elif offset is not None:
+        raise TypeError("offset applies to a ProducerRecord, not to a ConsumerRecord, which has its own")
+    return list(await runtime._handler(record))
+
+
+def _consumed(record: ProducerRecord, offset: int) -> ConsumerRecord:
+    """Return `record` as a run would consume it, at `offset`."""
+    if type(offset) is not int or offset < 0:
+        raise ValueError(f"offset must be a non-negative integer, got {offset!r}")
+    headers = record.headers.items() if isinstance(record.headers, Mapping) else record.headers or ()
+    return Message(
+        topic=record.topic,
+        partition=max(record.partition, 0),
+        offset=offset,
+        key=record.key,
+        value=record.value,
+        headers=[(name, value.encode() if isinstance(value, str) else value) for name, value in headers] or None,
+        timestamp=(TIMESTAMP_CREATE_TIME, record.timestamp or time.time_ns() // 1_000_000),
+    )
 
 
 class MockCluster:
