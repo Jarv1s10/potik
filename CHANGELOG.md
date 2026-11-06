@@ -2,7 +2,7 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
-## Unreleased
+## 0.2.1 (2026-11-06)
 
 - `TracingMiddleware` adds a `cancelled` event to an existing transaction span when its call is cancelled, as it does for handling and sending. Cancellation still does not force a transaction to be sampled.
 - `retry()` and `retry_forever()` keep a supplied backoff even when its callable object is falsy, instead of replacing it with the default.
