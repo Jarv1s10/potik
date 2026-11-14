@@ -23,6 +23,8 @@ runtime = potik.build_runtime(
 
 Here a `TimeoutError` gets five attempts in total. Once they're used up, the next rule writes the record to `orders.dlq`, and so does any other exception. If no rule decides, the partition stops.
 
+A rule that raises, e.g. a recovery rule whose database is down, passes the exception to the next rule. potik logs the rule's exception. If no later rule decides, the handler's exception stops the partition.
+
 `on(match, rule)` matches an exception type, a tuple of types, or a function that takes the exception and returns `True` or `False`. Pass `topics=` to apply a rule only to some topics' records:
 
 ```python

@@ -5,6 +5,7 @@ potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ver
 ## Unreleased
 
 - `potik.testing.handle_record()` raises `InvalidOutputError` when a middleware returns something other than a list or tuple of `ProducerRecord`s, as a run does. It returned the invalid result before, e.g. a single `ProducerRecord`'s fields as a list.
+- An exception rule that raises passes the exception to the next rule, and `ExceptionMiddleware` logs the rule's exception. The rule's exception propagated before, so later rules, e.g. a catch-all `dead_letter()`, never ran, and the partition stopped with the rule's exception in place of the handler's.
 
 ## 0.3.0 (2026-11-07)
 
