@@ -24,6 +24,7 @@ from potik import (
     Depends,
     EncodeError,
     Header,
+    InvalidOutputError,
     Key,
     PermanentError,
     ProducerRecord,
@@ -122,6 +123,23 @@ async def test_handle_record_consumes_a_producer_record_or_passes_a_consumer_rec
         await handle_record(runtime, Message(topic="orders", value=b"{}"), offset=1)
     with pytest.raises(ValueError, match="offset must be a non-negative integer"):
         await handle_record(runtime, orders(Order(sku="A"), key=None), offset=-1)
+
+
+async def test_handle_record_checks_outputs_that_middleware_replaces() -> None:
+    """A run checks the outputs after the middleware too, so `handle_record` does."""
+    router = Router()
+
+    @router.handler(orders)
+    async def handle(order: Order) -> None: ...
+
+    class Replace(BaseMiddleware):
+        async def handle(self, record: ConsumerRecord, call_next: RecordHandler) -> Sequence[ProducerRecord]:
+            await call_next(record)
+            return ProducerRecord("accepted")  # ty: ignore[invalid-return-type]
+
+    runtime = runtime_of(router, middleware=[Replace()])
+    with pytest.raises(InvalidOutputError, match="handle middleware returned a ProducerRecord, not a list or tuple"):
+        await handle_record(runtime, orders(Order(sku="A"), key=None))
 
 
 async def test_parameters_read_the_record_that_middleware_passes_on() -> None:

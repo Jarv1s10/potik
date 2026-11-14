@@ -130,12 +130,12 @@ def _check_outputs(outputs: object, source: str) -> None:
             raise InvalidOutputError(f"{source} returned a {type(output).__name__} in its list, not a ProducerRecord")
 
 
-def _checked(handler: RecordHandler) -> RecordHandler:
+def _checked(handler: RecordHandler, source: str) -> RecordHandler:
     """Check `handler`'s outputs where it returns, so that the middleware around it sees an invalid result as its failure."""
 
     async def handle(record: ConsumerRecord) -> Sequence[ProducerRecord]:
         outputs = await handler(record)
-        _check_outputs(outputs, "the handler")
+        _check_outputs(outputs, source)
         return outputs
 
     return handle

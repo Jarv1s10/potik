@@ -55,7 +55,7 @@ async def test_fail_stops_the_rules_before_a_rule_for_every_exception() -> None:
         return ProducerRecord("accepted")  # ty: ignore[invalid-return-type]
 
     rules = (on(InvalidOutputError, reraise()), on(Exception, dead_letter("dead")))
-    handle = _chain([ExceptionMiddleware(*rules)], "handle", _checked(handler))
+    handle = _chain([ExceptionMiddleware(*rules)], "handle", _checked(handler, "the handler"))
     with pytest.raises(InvalidOutputError, match="the handler returned a ProducerRecord, not a list or tuple"):
         await handle(Message(topic="orders", partition=0, offset=0))
 
@@ -104,7 +104,7 @@ async def test_rules_see_the_single_exception_of_a_task_group() -> None:
         seen.append(context.exception)
         return RetryAfter(0)
 
-    handle = _chain([ExceptionMiddleware(on(TimeoutError, retry_timeouts))], "handle", _checked(handler))
+    handle = _chain([ExceptionMiddleware(on(TimeoutError, retry_timeouts))], "handle", _checked(handler, "the handler"))
     with pytest.raises(ExceptionGroup) as caught:
         await handle(Message(topic="orders", partition=0, offset=0))
     assert [type(exc) for exc in seen] == [TimeoutError]
@@ -115,7 +115,7 @@ async def test_rules_see_the_single_exception_of_a_task_group() -> None:
     async def failing(record: ConsumerRecord) -> Sequence[ProducerRecord]:
         raise several
 
-    handle = _chain([ExceptionMiddleware(on(TimeoutError, retry_timeouts))], "handle", _checked(failing))
+    handle = _chain([ExceptionMiddleware(on(TimeoutError, retry_timeouts))], "handle", _checked(failing, "the handler"))
     with pytest.raises(ExceptionGroup) as caught:
         await handle(Message(topic="orders", partition=0, offset=0))
     assert caught.value is several
@@ -127,7 +127,9 @@ async def test_a_nan_delay_fails_the_record_instead_of_waiting_forever() -> None
     async def handler(record: ConsumerRecord) -> Sequence[ProducerRecord]:
         raise TimeoutError("slow")
 
-    handle = _chain([ExceptionMiddleware(lambda context: RetryAfter(math.nan))], "handle", _checked(handler))
+    handle = _chain(
+        [ExceptionMiddleware(lambda context: RetryAfter(math.nan))], "handle", _checked(handler, "the handler")
+    )
     with anyio.fail_after(1), pytest.raises(ValueError, match="got NaN") as caught:
         await handle(Message(topic="orders", partition=0, offset=0))
     assert isinstance(caught.value.__context__, TimeoutError)

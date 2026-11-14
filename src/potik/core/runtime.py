@@ -86,7 +86,9 @@ class Runtime:
             if type(limit) is not int or limit < 1:
                 raise ValueError(f"the key concurrency of topic {topic!r} must be a positive integer, got {limit!r}")
         self._middleware = _middleware_tuple(middleware)
-        self._handler = cast(RecordHandler, _chain(self._middleware, "handle", _checked(handler)))
+        # Middleware may replace the handler's outputs, so the chain checks them again.
+        chain = cast(RecordHandler, _chain(self._middleware, "handle", _checked(handler, "the handler")))
+        self._handler = _checked(chain, "handle middleware")
         self._started = False
         self._rebalance_timeout = config.rebalance_timeout_ms / 1000
         self._consumer: ConsumerThread | None = None

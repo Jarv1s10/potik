@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, cast
 import anyio
 from confluent_kafka import KafkaException, Message, TopicPartition
 
-from potik.core.middleware import _check_outputs
 from potik.core.types import ConsumerRecord, PartitionStatus, ProducerRecord, RecordHandler
 
 if TYPE_CHECKING:
@@ -289,7 +288,6 @@ class Partition:
         finally:
             del self.running[offset]
         self.handler_seconds += (time.monotonic() - started - self.handler_seconds) / 8
-        _check_outputs(outputs, "handle middleware")
         return outputs
 
     def _clear(self) -> None:
