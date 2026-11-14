@@ -121,8 +121,8 @@ async def test_rules_see_the_single_exception_of_a_task_group() -> None:
     assert caught.value is several
 
 
-async def test_a_nan_delay_fails_the_record_instead_of_waiting_forever() -> None:
-    """A backoff computed as NaN, e.g. from a malformed Retry-After value, raises with the handler's failure as its context."""
+async def test_a_nan_delay_passes_the_exception_on_instead_of_waiting_forever(caplog: pytest.LogCaptureFixture) -> None:
+    """A backoff computed as NaN, e.g. from a malformed Retry-After value, makes its rule raise, so the handler's own failure propagates."""
 
     async def handler(record: ConsumerRecord) -> Sequence[ProducerRecord]:
         raise TimeoutError("slow")
@@ -130,6 +130,29 @@ async def test_a_nan_delay_fails_the_record_instead_of_waiting_forever() -> None
     handle = _chain(
         [ExceptionMiddleware(lambda context: RetryAfter(math.nan))], "handle", _checked(handler, "the handler")
     )
-    with anyio.fail_after(1), pytest.raises(ValueError, match="got NaN") as caught:
+    with anyio.fail_after(1), pytest.raises(TimeoutError, match="slow") as caught:
         await handle(Message(topic="orders", partition=0, offset=0))
-    assert isinstance(caught.value.__context__, TimeoutError)
+    assert caught.value.__context__ is None
+    [logged] = caplog.records
+    assert logged.exc_info is not None
+    assert isinstance(logged.exc_info[1], ValueError)
+
+
+async def test_a_rule_that_raises_leaves_the_exception_to_the_next_rule(caplog: pytest.LogCaptureFixture) -> None:
+    """A failing recovery rule, e.g. one whose database is down, still leaves the record to the catch-all rule."""
+
+    async def handler(record: ConsumerRecord) -> Sequence[ProducerRecord]:
+        raise TimeoutError("slow")
+
+    async def recover(context: ExceptionContext[TimeoutError]) -> Sequence[ProducerRecord]:
+        raise ConnectionError("recovery database is down")
+
+    rules = (on(TimeoutError, recover), on(Exception, dead_letter("dead")))
+    handle = _chain([ExceptionMiddleware(*rules)], "handle", _checked(handler, "the handler"))
+    [letter] = await handle(Message(topic="orders", partition=0, offset=0))
+    assert letter.topic == "dead"
+    assert dict(letter.headers or ())["potik.dlq.exception.type"] == "builtins.TimeoutError"
+    [logged] = caplog.records
+    assert "raised on orders [0] at offset 0, so the next rule decides" in logged.getMessage()
+    assert logged.exc_info is not None
+    assert isinstance(logged.exc_info[1], ConnectionError)

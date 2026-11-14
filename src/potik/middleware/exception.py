@@ -1,5 +1,6 @@
 """Retry or recover from a handler's exceptions with rules that are checked in order, like `except` clauses."""
 
+import logging
 import math
 import random
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
@@ -50,6 +51,8 @@ type Match[ExcT: Exception] = type[ExcT] | tuple[type[ExcT], ...] | Callable[[Ex
 """The exceptions that `on()` applies a rule to: a type, a tuple of them as in an `except` clause, or a predicate."""
 type Backoff = Callable[[ExceptionContext[Any]], float]
 """Returns the seconds to wait before the next attempt, e.g. from a `Retry-After` value that the exception carries."""
+
+_logger = logging.getLogger(__name__)
 
 # The prefix of the headers that `dead_letter_headers` adds.
 _DLQ_PREFIX = "potik.dlq."
@@ -137,7 +140,7 @@ class ExceptionMiddleware(BaseMiddleware):
 
     With `potik.build_runtime()`, pass the rules as `exception_rules` instead of creating this middleware. Build rules with `on()`, `retry()`, `retry_forever()`, `skip()`, `reraise()`, and `dead_letter()`.
 
-    The first rule that returns something other than None decides. `RetryAfter`, e.g. from `retry()`, calls the handler again after its delay. Records, e.g. from `skip()` or `dead_letter()`, commit as the record's outputs in place of the failure. `Reraise`, from `reraise()`, lets the exception propagate. An exception that no rule handles propagates too, and stops the partition, or fails the run (see `Config.stop_failed_partitions`).
+    The first rule that returns something other than None decides. A rule that raises counts as returning None: the middleware logs its exception and asks the next rule, so a failing recovery rule still leaves the record to a catch-all `dead_letter()` rule. `RetryAfter`, e.g. from `retry()`, calls the handler again after its delay. Records, e.g. from `skip()` or `dead_letter()`, commit as the record's outputs in place of the failure. `Reraise`, from `reraise()`, lets the exception propagate. An exception that no rule handles propagates as the handler raised it, and stops the partition, or fails the run (see `Config.stop_failed_partitions`).
 
     Rules see the single exception of an `ExceptionGroup` that holds only one, so `on(TimeoutError, ...)` matches a `TimeoutError` from a task group in the handler. A group of several exceptions stays a group, which `on(ExceptionGroup, ...)` or a function matches. Either way, an exception that no rule handles propagates as the handler raised it.
 
@@ -189,7 +192,19 @@ class ExceptionMiddleware(BaseMiddleware):
 
     async def _decide(self, context: ExceptionContext[Exception]) -> Decision:
         for rule in self._rules:
-            if (decision := await _resolved(rule(context))) is not None:
+            try:
+                decision = await _resolved(rule(context))
+            except Exception:
+                record = context.record
+                _logger.exception(
+                    "exception rule %r raised on %s [%s] at offset %s, so the next rule decides",
+                    rule,
+                    record.topic(),
+                    record.partition(),
+                    record.offset(),
+                )
+                continue
+            if decision is not None:
                 return decision
         return None
 
