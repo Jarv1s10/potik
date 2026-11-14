@@ -2,6 +2,10 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
+## Unreleased
+
+- `potik.testing.handle_record()` raises `InvalidOutputError` when a middleware returns something other than a list or tuple of `ProducerRecord`s, as a run does. It returned the invalid result before, e.g. a single `ProducerRecord`'s fields as a list.
+
 ## 0.3.0 (2026-11-07)
 
 - Reading a newly assigned partition's committed offset retries until `rebalance_timeout_ms` when the coordinator's connection times out, e.g. when a broker stalls for 10 seconds or more, or when the coordinator moves to another broker. The run failed with `Failed to get committed offsets: Local: Timed out` or `NOT_COORDINATOR` before.
