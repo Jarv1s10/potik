@@ -2,6 +2,10 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
+## 0.3.2 (2026-11-22)
+
+- potik supports Python 3.15. It requires confluent-kafka 2.16.2 or later, the first release with Python 3.15 wheels.
+
 ## 0.3.1 (2026-11-14)
 
 - `potik.testing.handle_record()` raises `InvalidOutputError` when a middleware returns something other than a list or tuple of `ProducerRecord`s, as a run does. It returned the invalid result before, e.g. a single `ProducerRecord`'s fields as a list.

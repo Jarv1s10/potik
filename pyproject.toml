@@ -1,6 +1,6 @@
 [project]
 name = "potik"
-version = "0.3.1"
+version = "0.3.2"
 description = "An async Python framework for exactly-once Kafka services."
 readme = "README.md"
 license = "MIT"
@@ -20,12 +20,13 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: System :: Distributed Computing",
     "Typing :: Typed",
 ]
 dependencies = [
     "anyio>=4.14.0",
-    "confluent-kafka>=2.16.0",
+    "confluent-kafka>=2.16.2",  # the first with Python 3.15 wheels
     "typing-extensions>=4.14.0",  # Sentinel, TypeForm, and type parameter defaults before Python 3.13
 ]
 
