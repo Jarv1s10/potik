@@ -7,25 +7,31 @@ on:
 permissions:
   contents: read
 
+# One release at a time. A started release is never cancelled, since it may have published already.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   ci:
-    uses: ./.github/workflows/ci.yml
+    uses: $/.github/workflows/ci.yml
     with:
       slow: true
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
       - run: test "v$(uv version --short)" = "$GITHUB_REF_NAME"  # the tag names the version that gets published
       - run: uv build
       - run: uv run --isolated --no-project --with dist/*.whl python -c "import potik.core, potik.middleware, potik.testing"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: dist
           path: dist/
@@ -33,29 +39,31 @@ jobs:
   publish:
     needs: [ci, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/project/potik/
     permissions:
       id-token: write  # trusted publishing and attestations
     steps:
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist
           path: dist/
-      - uses: astral-sh/attest-action@v0.0.7
+      - uses: astral-sh/attest-action@39b6ce43875c196a579e31635b11aa2a2036384a  # v0.0.7
       - run: uv publish
 
   github-release:
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write  # gh release creates the release and uploads the dists
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: dist
           path: dist/
@@ -66,8 +74,8 @@ jobs:
 
   docs:
     needs: publish
-    permissions:
+    permissions:  # what docs.yml's jobs need, since a called workflow gets no more than its caller's job
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/docs.yml
+    uses: $/.github/workflows/docs.yml

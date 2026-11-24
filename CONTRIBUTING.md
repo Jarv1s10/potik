@@ -21,6 +21,8 @@ uv run pyrefly check
 prek run
 ```
 
+`prek run` also audits the GitHub Actions workflows with zizmor. Workflows pin each action to a full commit SHA, with its version in a comment, and Dependabot updates both a week after a release.
+
 ## Tests
 
 The tests start their own Kafka broker in a container through testcontainers, with Docker or Podman. They find Podman's socket unless `DOCKER_HOST` is set.
