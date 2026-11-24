@@ -25,6 +25,8 @@ _CONSUMER_DEFAULTS = {
 # librdkafka backs off reconnecting for up to 10s. After an outage, a client may then stay disconnected long enough to time out the transaction in flight. Reconnect within a second of the broker's return, like the Java clients.
 # librdkafka's producer asks the broker to create a missing topic, which a broker with Kafka's defaults does with one partition. Fail the send instead.
 _CLIENT_DEFAULTS = {"reconnect.backoff.max.ms": 1000, "allow.auto.create.topics": False}
+# librdkafka hashes keys with CRC32, unlike the Java client and the clients that follow it, e.g. Kafka Streams and aiokafka, which hash with murmur2. A key that two producers hash differently lands in two partitions, so hash as the Java client does.
+_PRODUCER_DEFAULTS = {"partitioner": "murmur2_random"}
 
 # Client options the runtime's correctness depends on.
 _CONSUMER_OWNED = frozenset(
@@ -81,7 +83,7 @@ class Config:
         transactional_id_prefix: The start of the producer's `transactional.id`. Give each app its own, so that its ACL on the prefixed `TransactionalId` resource covers no other app's IDs.
         options: librdkafka options of both clients, e.g. for the connection, TLS, SASL, OAuth, `client.id`, or logging.
         consumer_options: librdkafka options of the consumer, e.g. `group.remote.assignor`, `group.instance.id`, `client.rack`, or fetch sizes.
-        producer_options: librdkafka options of the transactional producer, e.g. `compression.type` or `linger.ms`.
+        producer_options: librdkafka options of the transactional producer, e.g. `compression.type` or `linger.ms`. Its `partitioner` defaults to `murmur2_random`, which puts a key in the same partition as the Java client does.
 
     Raises:
         ValueError: If a limit is out of range, or options override a setting that the runtime owns.
@@ -167,7 +169,7 @@ class Config:
         # The group's length makes the ID unambiguous. Without it, group "a-b" with instance "c" and group "a" with instance "b-c" would fence each other.
         suffix = f"{len(self.group_id)}-{self.group_id}-{instance}" if instance else uuid4()
         return {
-            **_idempotent({**self.client_config(), **self.producer_options}),
+            **_producer_options({**self.client_config(), **self.producer_options}),
             "transactional.id": f"{self.transactional_id_prefix}-{suffix}",
             "transaction.timeout.ms": self.transaction_timeout_ms,
             # Re-bootstrapping while all brokers are down drops the connection that a pending transactional call waits on. That call then blocks forever, ignoring its timeout (librdkafka 2.16.0).
@@ -182,6 +184,6 @@ def _client_config(bootstrap_servers: str, options: Mapping[str, Any]) -> dict[s
     return {**_CLIENT_DEFAULTS, **options, "bootstrap.servers": bootstrap_servers}
 
 
-def _idempotent(options: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a producer's `options`, made idempotent and waiting for all in-sync replicas."""
-    return {**options, "enable.idempotence": True, "acks": "all"}
+def _producer_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a producer's options: potik's producer defaults, overridden by `options`, made idempotent and waiting for all in-sync replicas."""
+    return {**_PRODUCER_DEFAULTS, **options, "enable.idempotence": True, "acks": "all"}

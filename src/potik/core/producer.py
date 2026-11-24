@@ -14,7 +14,7 @@ import confluent_kafka
 from anyio.lowlevel import EventLoopToken
 from confluent_kafka import KafkaError, KafkaException, Message
 
-from potik.core.config import _PRODUCER_OWNED, Config, _client_config, _idempotent
+from potik.core.config import _PRODUCER_OWNED, Config, _client_config, _producer_options
 from potik.core.middleware import BaseMiddleware, ProducerScope, _chain, _enter_lifespans, _middleware_tuple
 from potik.core.types import Delivery, ProducerRecord, RecordSender
 
@@ -52,7 +52,7 @@ class Producer:
 
     Args:
         bootstrap_servers: The cluster's bootstrap servers.
-        options: librdkafka options, e.g. TLS, SASL, `linger.ms`, or `message.timeout.ms`, which bounds how long a send may take. Keep the `partitioner` the same as other producers of the same topics, so that each key stays in one partition.
+        options: librdkafka options, e.g. TLS, SASL, `linger.ms`, or `message.timeout.ms`, which bounds how long a send may take. The `partitioner` defaults to `murmur2_random`, which puts a key in the same partition as the Java client does. Keep it the same as other producers of the same topics, so that each key stays in one partition.
         middleware: Middleware instances, outermost first. A producer runs their `lifespan` and `send` stages (see `BaseMiddleware`). Add a `TopicCheckMiddleware` to check at the start that the topics exist. The producer never asks the broker to create a missing topic, unless `allow.auto.create.topics` is set back to true.
         close_timeout: How many seconds exiting waits for sends to be delivered or fail. Then it fails the rest with a `_PURGE_QUEUE` or `_PURGE_INFLIGHT` error, although a purged send that was already in flight may still be delivered. Keep it, plus the time that the rest of the shutdown takes, below the process supervisor's deadline, e.g. Kubernetes' termination grace period of 30 seconds.
 
@@ -77,7 +77,7 @@ class Producer:
         if conflicts := _PRODUCER_OWNED.intersection(options):
             raise ValueError(f"options cannot include settings that the producer manages: {sorted(conflicts)}")
         self._scope = ProducerScope(client_options=MappingProxyType(_client_config(bootstrap_servers, options)))
-        self._config = _idempotent(self._scope.client_options)
+        self._config = _producer_options(self._scope.client_options)
         self._middleware = _middleware_tuple(middleware)
         self._client: confluent_kafka.Producer | None = None
         self._send: RecordSender | None = None

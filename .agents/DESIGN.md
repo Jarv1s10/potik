@@ -6,7 +6,7 @@ How potik behaves, in more detail than the user docs in `docs/`. Docstrings in `
 
 `ConsumerRecord` is the native `confluent_kafka.Message`, so its fields are methods: `record.key()`, `record.value()`, `record.headers()`, `record.offset()`, and so on. The runtime never copies records into wrappers.
 
-`ProducerRecord` is a `NamedTuple` of `(topic, key, value, headers, partition)`. Headers are either a list of `(name, value)` pairs, which keeps order and allows duplicates, or a dict. `partition=-1` leaves the choice to librdkafka's partitioner. For Java-compatible key partitioning, set `producer_options={"partitioner": "murmur2_random"}`.
+`ProducerRecord` is a `NamedTuple` of `(topic, key, value, headers, partition)`. Headers are either a list of `(name, value)` pairs, which keeps order and allows duplicates, or a dict. `partition=-1` leaves the choice to the producer's partitioner. Both of potik's producers default to librdkafka's `murmur2_random` partitioner, which hashes keys as the Java client does, and as clients that follow it do, e.g. Kafka Streams and aiokafka. librdkafka's own default, `consistent_random`, hashes with CRC32, so a key that a Java or aiokafka producer also writes would land in two partitions, and readers would lose its order. The default lives in `_producer_options`, under the options, so `producer_options` or a `Producer`'s `options` can set another `partitioner`. It stays out of `client_config()`, because a consumer or admin client warns about a producer property.
 
 ## Topics
 
@@ -121,7 +121,7 @@ async def place(order: Order, request: Request) -> None:
 
 A `TopicCheckMiddleware([orders])` checks, when the producer is entered, that the topics it sends to exist, and raises `TopicCheckError` otherwise, so a service fails at startup rather than on its first send. The topics do not restrict what it sends.
 
-Next to a runtime, the service's `main` owns the producer and passes it to handlers in the run's context. `Producer.from_config(config)` reuses the runtime's `options` and `producer_options`. The topics that handlers send to belong to the producer's `TopicCheckMiddleware`, not to their `output_topics`. Producers of one topic should use the same `partitioner`, or a key's records end up in different partitions.
+Next to a runtime, the service's `main` owns the producer and passes it to handlers in the run's context. `Producer.from_config(config)` reuses the runtime's `options` and `producer_options`. The topics that handlers send to belong to the producer's `TopicCheckMiddleware`, not to their `output_topics`. Producers of one topic should use the same `partitioner`, or a key's records end up in different partitions. potik's producers default to `murmur2_random`, the Java client's hashing.
 
 ```python
 @router.handler(payments)

@@ -44,7 +44,7 @@ class ProducerRecord(NamedTuple, Generic[_V_co]):
         key: The encoded key, or None for a null key.
         value: The encoded value, or None for a tombstone.
         headers: The record's headers.
-        partition: The record's partition, or -1 to let the producer's partitioner pick one from the key. librdkafka's default partitioner hashes keys differently from the Java client's. To match Java producers, set the `partitioner` option to `murmur2_random`.
+        partition: The record's partition, or -1 to let the producer's partitioner pick one from the key. potik's producers default to the `murmur2_random` partitioner, which picks the same partition for a key as the Java client.
         timestamp: The record's timestamp, e.g. its event time, in milliseconds since the Unix epoch, or None for the time the producer sends it. A topic with `message.timestamp.type=LogAppendTime` replaces it with the broker's time. To copy a consumed record's timestamp, pass `record.timestamp()[1]`.
     """
 
