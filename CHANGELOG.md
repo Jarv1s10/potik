@@ -2,6 +2,10 @@
 
 potik follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can break the API.
 
+## Unreleased
+
+- The runtime's transactional producer and `Producer` default to the `murmur2_random` partitioner, which puts a key in the same partition as the Java client and the clients that follow it, e.g. Kafka Streams and aiokafka. They used librdkafka's default, `consistent_random`, before, which hashes keys with CRC32, so a key that another client also wrote went to a different partition. Keyed records now go to different partitions than before. To keep the old partitions, set `partitioner` to `consistent_random` in `producer_options` and in a `Producer`'s `options`.
+
 ## 0.3.2 (2026-11-22)
 
 - potik supports Python 3.15. It requires confluent-kafka 2.16.2 or later, the first release with Python 3.15 wheels.

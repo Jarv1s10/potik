@@ -134,3 +134,20 @@ async def test_a_run_that_cannot_handle_signals_can_run_without_them() -> None:
             async with anyio.create_task_group() as tasks:
                 await tasks.start(partial(runtime.run, handle_signals=False))
                 tasks.cancel_scope.cancel()
+
+
+# The Java client's murmur2 hashes of these keys, which Kafka's UtilsTest.testMurmur2 checks, pick these of 10 partitions. librdkafka's default CRC32 partitioner picks a different one for each.
+JAVA_PARTITIONS = {"21": 0, "foobar": 6, "a-little-bit-long-string": 2, "a-little-bit-longer-string": 9, "abc": 7}
+
+
+async def test_a_producer_partitions_keys_as_the_java_client() -> None:
+    keyed = Topic("keyed", str)
+    with MockCluster() as cluster:
+        cluster.create_topic(keyed, partitions=10)
+        async with Producer(cluster.bootstrap_servers) as producer:
+            for key in JAVA_PARTITIONS:
+                await producer.send(keyed("x", key=key))
+        records = await cluster.wait_records(keyed, len(JAVA_PARTITIONS))
+    assert {record.key(): record.partition() for record in records} == {
+        key.encode(): partition for key, partition in JAVA_PARTITIONS.items()
+    }
