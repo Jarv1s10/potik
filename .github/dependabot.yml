@@ -1,9 +1,23 @@
 version: 2
 updates:
+  # Workflows pin actions to commit SHAs, and Dependabot updates the SHA and its version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    # A compromised release is usually found and pulled within days, so updates wait a week.
+    cooldown:
+      default-days: 7
     groups:
       actions:
+        patterns: ["*"]
+  # uv.lock pins what CI and contributors run. pyproject.toml's lower bounds stay as they are, and CI's lowest job tests them.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
         patterns: ["*"]

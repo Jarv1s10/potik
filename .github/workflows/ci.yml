@@ -26,14 +26,18 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - run: uvx prek run --all-files --show-diff-on-failure
       - run: uv run --no-dev --group docs zensical build --strict
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -41,17 +45,22 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - run: docker pull apache/kafka:4.1.0  # once, not in every worker at once
       - run: uv run pytest -n 4
 
   # The oldest versions that pyproject.toml allows, so its lower bounds stay true.
   lowest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - run: uv lock --resolution lowest-direct
       - run: uv sync --frozen --all-extras
       - run: uv run --frozen pytest tests/unit -n 4
@@ -59,8 +68,11 @@ jobs:
   slow:
     if: inputs.slow  # before a release, or by hand
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - run: docker pull apache/kafka:4.1.0
       - run: uv run pytest -m slow -n 4

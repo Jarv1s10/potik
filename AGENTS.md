@@ -38,7 +38,7 @@ Agents are strongly encouraged to propose bold, sweeping changes that improve th
 - Run Python commands through `uv`, for example `uv run python ...`.
 - Format and lint with `uvx ruff format .` and `uvx ruff check . --fix --unsafe-fixes`.
 - Type check with `uvx ty check`, `uv run mypy`, and `uv run pyrefly check`. `tests/typing` holds the public API's expected types, and marks each call that type checkers must reject with one ignore comment per checker.
-- At the end of your work, run `prek run`. It runs `ruff` and the three type checkers.
+- At the end of your work, run `prek run`. It runs `ruff`, the three type checkers, and `zizmor` on the GitHub Actions workflows.
 
 ## Documentation
 

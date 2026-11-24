@@ -5,28 +5,43 @@ on:
   workflow_call:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read  # configure-pages reads the site's settings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false  # the site is published, so it never builds from a cache that another run wrote
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
+      - run: uv run --no-dev --group docs zensical build --strict
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: site
+
+  # A job of its own, as in GitHub's Pages workflows: deploy-pages looks up the artifact by name, and right after the upload the lookup can miss it.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write  # deploy-pages publishes the site
+      id-token: write  # deploy-pages proves the deployment's origin with an OIDC token
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - uses: actions/configure-pages@v6
-      - run: uv run --no-dev --group docs zensical build --strict
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1

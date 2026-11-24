@@ -22,3 +22,11 @@ hooks = [
   { id = "mypy", name = "mypy", language = "system", entry = "uv run mypy", pass_filenames = false, types_or = ["python", "pyi"] },
   { id = "pyrefly", name = "pyrefly", language = "system", entry = "uv run pyrefly check", pass_filenames = false, types_or = ["python", "pyi"] },
 ]
+
+# Audits the GitHub Actions workflows and Dependabot config for security issues, e.g. unpinned actions.
+[[repos]]
+repo = "https://github.com/zizmorcore/zizmor-pre-commit"
+rev = "v1.32.0"
+hooks = [
+  { id = "zizmor" },
+]
